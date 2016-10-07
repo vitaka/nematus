@@ -107,8 +107,10 @@ def concatenate(tensor_list, axis=0):
 # return name of word embedding for factor i
 # special handling of factor 0 for backward compatibility
 def embedding_name(i):
-    if i == 0:
-        return 'Wemb'
-    else:
-        return 'Wemb'+str(i)
+    return factored_layer_name('Wemb',i)
 
+def factored_layer_name(name,i):
+    if i == 0:
+        return name
+    else:
+        return name+str(i)

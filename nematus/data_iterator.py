@@ -13,7 +13,7 @@ def fopen(filename, mode='r'):
 class TextIterator:
     """Simple Bitext iterator."""
     def __init__(self, source, target,
-                 source_dicts, target_dict,
+                 source_dicts, target_dicts,
                  batch_size=128,
                  maxlen=100,
                  n_words_source=-1,
@@ -31,7 +31,10 @@ class TextIterator:
         self.source_dicts = []
         for source_dict in source_dicts:
             self.source_dicts.append(load_dict(source_dict))
-        self.target_dict = load_dict(target_dict)
+        #self.target_dict = load_dict(target_dict)
+        self.target_dicts = []
+        for target_dict in target_dicts:
+            self.target_dicts.append(load_dict(target_dict))
 
         self.batch_size = batch_size
         self.maxlen = maxlen
@@ -46,9 +49,10 @@ class TextIterator:
                         del d[key]
 
         if self.n_words_target > 0:
-                for key, idx in self.target_dict.items():
+            for d in self.target_dicts:
+                for key, idx in d.items():
                     if idx >= self.n_words_target:
-                        del self.target_dict[key]
+                        del d[key]
 
         self.shuffle = shuffle_each_epoch
         self.sort_by_length = sort_by_length
@@ -56,7 +60,7 @@ class TextIterator:
         self.source_buffer = []
         self.target_buffer = []
         self.k = batch_size * maxibatch_size
-        
+
 
         self.end_of_data = False
 
@@ -134,10 +138,16 @@ class TextIterator:
 
                 # read from source file and map to word index
                 tt = self.target_buffer.pop()
-                tt = [self.target_dict[w] if w in self.target_dict else 1
-                      for w in tt]
-                if self.n_words_target > 0:
-                    tt = [w if w < self.n_words_target else 1 for w in tt]
+                tmp = []
+                for w in tt:
+                    w = [self.target_dicts[i][f] if f in self.target_dicts[i] else 1 for (i,f) in enumerate(w.split('|'))]
+                    tmp.append(w)
+                #TODO: self.n_words_target is ignored here, but it seems that it was used above
+                #and its use here is redundant
+                #tt = [self.target_dict[w] if w in self.target_dict else 1 for w in tt]
+                #if self.n_words_target > 0:
+                #    tt = [w if w < self.n_words_target else 1 for w in tt]
+                tt = tmp
 
                 if len(ss) > self.maxlen and len(tt) > self.maxlen:
                     continue

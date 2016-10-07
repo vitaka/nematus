@@ -85,9 +85,11 @@ def init_params(options):
     for factor in range(options['factors']):
         params[embedding_name(factor)] = norm_weight(options['n_words_src'], options['dim_per_factor'][factor])
 
-    params['Wemb_dec'] = norm_weight(options['n_words'], options['dim_word'])
+    for factor in range(options['factors_tl']):
+        params[embedding_name(factor)+'_dec'] = norm_weight(options['n_words'], options['dim_per_factor_tl'][factor])
 
-    # encoder: bidirectional RNN
+
+    # encoder: bidirectional RNN. Shared across TL factors
     params = get_layer_param(options['encoder'])(options, params,
                                               prefix='encoder',
                                               nin=options['dim_word'],
@@ -98,28 +100,30 @@ def init_params(options):
                                               dim=options['dim'])
     ctxdim = 2 * options['dim']
 
-    # init_state, init_cell
-    params = get_layer_param('ff')(options, params, prefix='ff_state',
-                                nin=ctxdim, nout=options['dim'])
-    # decoder
-    params = get_layer_param(options['decoder'])(options, params,
-                                              prefix='decoder',
-                                              nin=options['dim_word'],
-                                              dim=options['dim'],
-                                              dimctx=ctxdim)
-    # readout
-    params = get_layer_param('ff')(options, params, prefix='ff_logit_lstm',
-                                nin=options['dim'], nout=options['dim_word'],
-                                ortho=False)
-    params = get_layer_param('ff')(options, params, prefix='ff_logit_prev',
-                                nin=options['dim_word'],
-                                nout=options['dim_word'], ortho=False)
-    params = get_layer_param('ff')(options, params, prefix='ff_logit_ctx',
-                                nin=ctxdim, nout=options['dim_word'],
-                                ortho=False)
-    params = get_layer_param('ff')(options, params, prefix='ff_logit',
-                                nin=options['dim_word'],
-                                nout=options['n_words'])
+    #TODO: adjust n_words ? Different factors will have different vocabulary sizes
+    for factor in xrange(options['factors_tl']):
+        # init_state, init_cell
+        params = get_layer_param('ff')(options, params, prefix=factored_layer_name('ff_state',factor),
+                                    nin=ctxdim, nout=options['dim'])
+        # decoder
+        params = get_layer_param(options['decoder'])(options, params,
+                                                  prefix=factored_layer_name('decoder',factor),
+                                                  nin=options['dim_per_factor_tl'][factor],
+                                                  dim=options['dim'],
+                                                  dimctx=ctxdim)
+        # readout
+        params = get_layer_param('ff')(options, params, prefix=factored_layer_name('ff_logit_lstm',factor),
+                                    nin=options['dim'], nout=options['dim_per_factor_tl'][factor],
+                                    ortho=False)
+        params = get_layer_param('ff')(options, params, prefix=factored_layer_name('ff_logit_prev',factor),
+                                    nin=options['dim_per_factor_tl'][factor],
+                                    nout=options['dim_per_factor_tl'][factor], ortho=False)
+        params = get_layer_param('ff')(options, params, prefix=factored_layer_name('ff_logit_ctx',factor),
+                                    nin=ctxdim, nout=options['dim_per_factor_tl'][factor],
+                                    ortho=False)
+        params = get_layer_param('ff')(options, params, prefix=factored_layer_name('ff_logit',factor),
+                                    nin=options['dim_per_factor_tl'][factor],
+                                    nout=options['n_words'])
 
     return params
 
@@ -186,10 +190,10 @@ def build_model(tparams, options):
     proj = get_layer_constr(options['encoder'])(tparams, emb, options,
                                             prefix='encoder',
                                             mask=x_mask,
-                                            emb_dropout=emb_dropout, 
+                                            emb_dropout=emb_dropout,
                                             rec_dropout=rec_dropout,
                                             profile=profile)
-    
+
 
     # word embedding for backward rnn (source)
     embr = []
@@ -637,6 +641,7 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
 def train(dim_word=100,  # word vector dimensionality
           dim=1000,  # the number of LSTM units
           factors=1, # input factors
+          factors_tl=1, #output factors
           dim_per_factor=None, # list of word vector dimensionalities (one per factor): [250,200,50] for total dimensionality of 500
           encoder='gru',
           decoder='gru_cond',
@@ -696,8 +701,16 @@ def train(dim_word=100,  # word vector dimensionality
             sys.stderr.write('Error: if using factored input, you must specify \'dim_per_factor\'\n')
             sys.exit(1)
 
-    assert(len(dictionaries) == factors + 1) # one dictionary per source factor + 1 for target factor
+    if model_options['dim_per_factor_tl'] == None:
+        if factors_tl == 1:
+            model_options['dim_per_factor_tl'] = [model_options['dim_word']]
+        else:
+            sys.stderr.write('Error: if using factored output, you must specify \'dim_per_factor_tl\'\n')
+            sys.exit(1)
+
+    assert(len(dictionaries) == factors + factors_tl) # one dictionary per source factor + 1 for target factor
     assert(len(model_options['dim_per_factor']) == factors) # each factor embedding has its own dimensionality
+    assert(len(model_options['dim_per_factor_tl']) == factors_tl) # each factor embedding has its own dimensionality
     assert(sum(model_options['dim_per_factor']) == model_options['dim_word']) # dimensionality of factor embeddings sums up to total dimensionality of input embedding vector
 
     # load dictionaries and invert them
@@ -709,6 +722,7 @@ def train(dim_word=100,  # word vector dimensionality
         for kk, vv in worddicts[ii].iteritems():
             worddicts_r[ii][vv] = kk
 
+    #TODO: do something with nwords and factors in the TL
     if n_words_src is None:
 	n_words_src = len(worddicts[0])
         model_options['n_words_src'] = n_words_src
@@ -740,7 +754,7 @@ def train(dim_word=100,  # word vector dimensionality
                          shuffle_each_epoch=shuffle_each_epoch,
                          sort_by_length=sort_by_length,
                          indomain_source=domain_interpolation_indomain_datasets[0],
-                         indomain_target=domain_interpolation_indomain_datasets[1], 
+                         indomain_target=domain_interpolation_indomain_datasets[1],
                          interpolation_rate=domain_interpolation_cur,
                          maxibatch_size=maxibatch_size)
     else:
