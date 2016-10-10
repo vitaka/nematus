@@ -17,7 +17,7 @@ class TextIterator:
                  batch_size=128,
                  maxlen=100,
                  n_words_source=-1,
-                 n_words_target=-1,
+                 n_words_target=[-1],
                  shuffle_each_epoch=False,
                  sort_by_length=True,
                  maxibatch_size=20):
@@ -48,8 +48,9 @@ class TextIterator:
                     if idx >= self.n_words_source:
                         del d[key]
 
-        if self.n_words_target > 0:
-            for d in self.target_dicts:
+
+        for i,d in enumerate(self.target_dicts):
+            if self.n_words_target[i] > 0:
                 for key, idx in d.items():
                     if idx >= self.n_words_target:
                         del d[key]
