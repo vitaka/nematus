@@ -66,7 +66,7 @@ def prepare_data(seqs_x, seqs_y, maxlen=None, n_words_src=30000,
     maxlen_y = numpy.max(lengths_y) + 1
 
     x = numpy.zeros((n_factors, maxlen_x, n_samples)).astype('int64')
-    y_l = [numpy.zeros((maxlen_y, n_samples)).astype('int64')  ]
+    y_l = [numpy.zeros((maxlen_y, n_samples)).astype('int64') for i in xrange(n_factors_tl) ]
     x_mask = numpy.zeros((maxlen_x, n_samples)).astype('float32')
     y_mask_l =  [ numpy.zeros((maxlen_y, n_samples)).astype('float32') for i in xrange(n_factors_tl) ]
     for idx, [s_x, s_y] in enumerate(zip(seqs_x, seqs_y)):
@@ -143,13 +143,11 @@ def build_model(tparams, options):
     x_mask = tensor.matrix('x_mask', dtype='float32')
     x_mask.tag.test_value = numpy.ones(shape=(5, 10)).astype('float32')
 
-
     # for the backward rnn, we just need to invert x and x_mask
     xr = x[:,::-1]
     xr_mask = x_mask[::-1]
 
     n_timesteps = x.shape[1]
-    n_timesteps_trg = y.shape[0]
     n_samples = x.shape[2]
 
     if options['use_dropout']:
@@ -171,13 +169,8 @@ def build_model(tparams, options):
         for factor in xrange(options['factors_tl']):
             ctx_dropout_d.append(shared_dropout_layer((4, n_samples, 2*options['dim']), use_noise, trng, retain_probability_hidden))
         source_dropout = shared_dropout_layer((n_timesteps, n_samples, 1), use_noise, trng, retain_probability_source)
-        target_dropout_l=[]
-        for factor in xrange(options['factors_tl']):
-            target_dropout_l.append(shared_dropout_layer((n_timesteps_trg, n_samples, 1), use_noise, trng, retain_probability_target))
         source_dropout = tensor.tile(source_dropout, (1,1,options['dim_word']))
 
-        for factor in xrange(options['factors_tl']):
-            target_dropout_l[factor] = tensor.tile(target_dropout_l[factor], (1,1,options['dim_per_factor_tl'][factor]))
     else:
         rec_dropout = theano.shared(numpy.array([1.]*2, dtype='float32'))
         rec_dropout_r = theano.shared(numpy.array([1.]*2, dtype='float32'))
@@ -185,7 +178,7 @@ def build_model(tparams, options):
         emb_dropout = theano.shared(numpy.array([1.]*2, dtype='float32'))
         emb_dropout_r = theano.shared(numpy.array([1.]*2, dtype='float32'))
         emb_dropout_d_l = [ theano.shared(numpy.array([1.]*2, dtype='float32')) for i in xrange(options['factors_tl']) ]
-        ctx_dropout_d = [ theano.shared(numpy.array([1.]*4, dtype='float32')) for i in xrange(options['factors_tl']) ]
+        ctx_dropout_d_l = [ theano.shared(numpy.array([1.]*4, dtype='float32')) for i in xrange(options['factors_tl']) ]
 
     # word embedding for forward rnn (source)
     emb = []
@@ -243,6 +236,12 @@ def build_model(tparams, options):
         y_mask = tensor.matrix( factored_layer_name('y_mask',factor) , dtype='float32')
         y_mask.tag.test_value = numpy.ones(shape=(8, 10)).astype('float32')
 
+        n_timesteps_trg = y.shape[0]
+
+        if options['use_dropout']:
+            target_dropout=shared_dropout_layer((n_timesteps_trg, n_samples, 1), use_noise, trng, retain_probability_target)
+            target_dropout = tensor.tile(target_dropout, (1,1,options['dim_per_factor_tl'][factor]))
+
         # initial decoder state
         init_state = get_layer_constr('ff')(tparams, ctx_mean, options,
                                     prefix=factored_layer_name('ff_state',factor), activ='tanh')
@@ -259,7 +258,7 @@ def build_model(tparams, options):
         emb = emb_shifted
 
         if options['use_dropout']:
-            emb *= target_dropout_l[factor]
+            emb *= target_dropout
 
         # decoder - pass through the decoder conditional gru with attention
         proj = get_layer_constr(options['decoder'])(tparams, emb, options,
@@ -313,7 +312,7 @@ def build_model(tparams, options):
         cost = (cost * y_mask).sum(0)
 
         y_l.append(y)
-        y_mask_l=append(y_mask)
+        y_mask_l.append(y_mask)
         cost_l.append(cost)
 
     #print "Print out in build_model()"
@@ -664,7 +663,7 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
                 pprobs /= lengths
 
         probs_l=[]
-        for pprobs in pprobs_l
+        for pprobs in pprobs_l:
             probs=[]
             for pp in pprobs:
                 probs.append(pp)
@@ -684,6 +683,7 @@ def train(dim_word=100,  # word vector dimensionality
           factors=1, # input factors
           factors_tl=1, #output factors
           dim_per_factor=None, # list of word vector dimensionalities (one per factor): [250,200,50] for total dimensionality of 500
+          dim_per_factor_tl=None,
           encoder='gru',
           decoder='gru_cond',
           patience=10,  # early stopping patience
@@ -767,10 +767,11 @@ def train(dim_word=100,  # word vector dimensionality
 	n_words_src = len(worddicts[0])
         model_options['n_words_src'] = n_words_src
     if n_words is None:
-        nwords=[]
-        for factor in factors_tl:
+        n_words=[]
+    for factor in xrange(factors_tl):
+        if len(n_words) < factor+1:
             n_words.append(len(worddicts[factors+factor]))
-            model_options['n_words'] = n_words
+    model_options['n_words'] = n_words
 
     # reload options
     if reload_ and os.path.exists(saveto):
@@ -789,7 +790,7 @@ def train(dim_word=100,  # word vector dimensionality
         print 'Using domain interpolation with initial ratio %s, increase rate %s' % (domain_interpolation_min, domain_interpolation_inc)
         domain_interpolation_cur = domain_interpolation_min
         train = DomainInterpolatorTextIterator(datasets[0], datasets[1],
-                         dictionaries[:-1], dictionaries[1],
+                         dictionaries[:factors], dictionaries[factors:],
                          n_words_source=n_words_src, n_words_target=n_words,
                          batch_size=batch_size,
                          maxlen=maxlen,
@@ -801,7 +802,7 @@ def train(dim_word=100,  # word vector dimensionality
                          maxibatch_size=maxibatch_size)
     else:
         train = TextIterator(datasets[0], datasets[1],
-                         dictionaries[:-1], dictionaries[-1],
+                         dictionaries[:factors], dictionaries[factors:],
                          n_words_source=n_words_src, n_words_target=n_words,
                          batch_size=batch_size,
                          maxlen=maxlen,
@@ -811,7 +812,7 @@ def train(dim_word=100,  # word vector dimensionality
 
     if valid_datasets and validFreq:
         valid = TextIterator(valid_datasets[0], valid_datasets[1],
-                            dictionaries[:-1], dictionaries[-1],
+                            dictionaries[:factors], dictionaries[factors:],
                             n_words_source=n_words_src, n_words_target=n_words,
                             batch_size=valid_batch_size,
                             maxlen=maxlen)
@@ -967,6 +968,8 @@ def train(dim_word=100,  # word vector dimensionality
                                                 n_words_src=n_words_src,
                                                 n_words=n_words)
 
+            #print >>sys.stderr, "Obtained y_l from Minibatch: "+str(y_l)
+
             if x is None:
                 print 'Minibatch with zero sample under length ', maxlen
                 uidx -= 1
@@ -975,7 +978,9 @@ def train(dim_word=100,  # word vector dimensionality
             ud_start = time.time()
 
             # compute cost, grads and copy grads to shared variables
-            cost = f_grad_shared(x, x_mask, y_l, y_mask_l)
+            myinps=[x,x_mask]+y_l+y_mask_l
+            #cost = f_grad_shared(x, x_mask, y_l, y_mask_l)
+            cost = f_grad_shared(*myinps)
 
             # do the update on parameters
             f_update(lrate)

@@ -5,6 +5,8 @@ import gzip
 import shuffle
 from util import load_dict
 
+import sys
+
 def fopen(filename, mode='r'):
     if filename.endswith('.gz'):
         return gzip.open(filename, mode)
@@ -21,6 +23,9 @@ class TextIterator:
                  shuffle_each_epoch=False,
                  sort_by_length=True,
                  maxibatch_size=20):
+
+        print >> sys.stderr, "Building data iterator with n_words_target="+str(n_words_target)
+
         if shuffle_each_epoch:
             shuffle.main([source, target])
             self.source = fopen(source+'.shuf', 'r')
@@ -52,7 +57,7 @@ class TextIterator:
         for i,d in enumerate(self.target_dicts):
             if self.n_words_target[i] > 0:
                 for key, idx in d.items():
-                    if idx >= self.n_words_target:
+                    if idx >= self.n_words_target[i]:
                         del d[key]
 
         self.shuffle = shuffle_each_epoch
