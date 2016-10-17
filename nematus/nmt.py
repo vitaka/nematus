@@ -34,7 +34,7 @@ from optimizers import *
 from domain_interpolation_data_iterator import DomainInterpolatorTextIterator
 
 # batch preparation
-def prepare_data(seqs_x, seqs_y, maxlen=None, n_words_src=30000,
+def prepare_data(seqs_x, seqs_y, maxlen=None, n_words_src=[30000],
                  n_words=30000):
     # x: a list of sentences
     lengths_x = [len(s) for s in seqs_x]
@@ -83,19 +83,21 @@ def init_params(options):
 
     # embedding
     for factor in range(options['factors']):
-        params[embedding_name(factor)] = norm_weight(options['n_words_src'], options['dim_per_factor'][factor])
+        params[embedding_name(factor)] = norm_weight(options['n_words_src'][factor], options['dim_word_per_factor'][factor])
 
     params['Wemb_dec'] = norm_weight(options['n_words'], options['dim_word'])
 
-    # encoder: bidirectional RNN
-    params = get_layer_param(options['encoder'])(options, params,
-                                              prefix='encoder',
-                                              nin=options['dim_word'],
-                                              dim=options['dim'])
-    params = get_layer_param(options['encoder'])(options, params,
-                                              prefix='encoder_r',
-                                              nin=options['dim_word'],
-                                              dim=options['dim'])
+    for factor in range(options['factors']):
+        # encoder: bidirectional RNN
+        params = get_layer_param(options['encoder'])(options, params,
+                                                  prefix=factored_layer_name('encoder',factor),
+                                                  nin=options['dim_word_per_factor'][factor],
+                                                  dim=options['dim_per_factor'][factor])
+        params = get_layer_param(options['encoder'])(options, params,
+                                                  prefix=factored_layer_name('encoder_r',factor),
+                                                  nin=options['dim_word_per_factor'][factor],
+                                                  dim=options['dim_per_factor'][factor])
+
     ctxdim = 2 * options['dim']
 
     # init_state, init_cell
@@ -123,7 +125,6 @@ def init_params(options):
 
     return params
 
-
 # build a training model
 def build_model(tparams, options):
     opt_ret = dict()
@@ -132,6 +133,7 @@ def build_model(tparams, options):
     use_noise = theano.shared(numpy.float32(0.))
 
     # description string: #words x #samples
+    #x has 3 dimensions because of factors
     x = tensor.tensor3('x', dtype='int64')
     x.tag.test_value = (numpy.random.rand(1, 5, 10)*100).astype('int64')
     x_mask = tensor.matrix('x_mask', dtype='float32')
@@ -141,7 +143,7 @@ def build_model(tparams, options):
     y_mask = tensor.matrix('y_mask', dtype='float32')
     y_mask.tag.test_value = numpy.ones(shape=(8, 10)).astype('float32')
 
-    # for the backward rnn, we just need to invert x and x_mask
+    # for the backward rnns, we just need to invert x and x_mask
     xr = x[:,::-1]
     xr_mask = x_mask[::-1]
 
@@ -154,68 +156,93 @@ def build_model(tparams, options):
         retain_probability_hidden = 1-options['dropout_hidden']
         retain_probability_source = 1-options['dropout_source']
         retain_probability_target = 1-options['dropout_target']
-        rec_dropout = shared_dropout_layer((2, n_samples, options['dim']), use_noise, trng, retain_probability_hidden)
-        rec_dropout_r = shared_dropout_layer((2, n_samples, options['dim']), use_noise, trng, retain_probability_hidden)
-        rec_dropout_d = shared_dropout_layer((5, n_samples, options['dim']), use_noise, trng, retain_probability_hidden)
-        emb_dropout = shared_dropout_layer((2, n_samples, options['dim_word']), use_noise, trng, retain_probability_emb)
-        emb_dropout_r = shared_dropout_layer((2, n_samples, options['dim_word']), use_noise, trng, retain_probability_emb)
+        rec_dropout_l=[]
+        rec_dropout_r_l=[]
+        for factor in xrange(options['factors']):
+            rec_dropout_l.append(shared_dropout_layer((2, n_samples, options['dim_per_factor'][factor]), use_noise, trng, retain_probability_hidden))
+            rec_dropout_r_l.append(shared_dropout_layer((2, n_samples, options['dim_per_factor'][factor]), use_noise, trng, retain_probability_hidden))
+        rec_dropout_d = shared_dropout_layer((4+options['factors'], n_samples, options['dim']), use_noise, trng, retain_probability_hidden)
+        emb_dropout_l = []
+        for factor in xrange(options['factors']):
+            emb_dropout_l.append(shared_dropout_layer((2, n_samples, options['dim_word_per_factor'][factor]), use_noise, trng, retain_probability_emb))
+        emb_dropout_r_l=[]
+        for factor in xrange(options['factors']):
+            emb_dropout_r_l.append(shared_dropout_layer((2, n_samples, options['dim_word_per_factor'][factor]), use_noise, trng, retain_probability_emb))
         emb_dropout_d = shared_dropout_layer((2, n_samples, options['dim_word']), use_noise, trng, retain_probability_emb)
-        ctx_dropout_d = shared_dropout_layer((4, n_samples, 2*options['dim']), use_noise, trng, retain_probability_hidden)
-        source_dropout = shared_dropout_layer((n_timesteps, n_samples, 1), use_noise, trng, retain_probability_source)
+
+        ctx_dropout_d_l =[]
+        for factor in xrange(options['factors']):
+            ctx_dropout_d_l.append(shared_dropout_layer((2, n_samples, 2*options['dim_per_factor'][factor]), use_noise, trng, retain_probability_hidden))
+        ctx_dropout_d_j=shared_dropout_layer((2, n_samples, 2*options['dim']), use_noise, trng, retain_probability_hidden)
+        source_dropout_l=[]
+        for factor in xrange(options['factors']):
+            source_dropout_l.append(shared_dropout_layer((n_timesteps, n_samples, 1), use_noise, trng, retain_probability_source))
+            source_dropout_l[-1] = tensor.tile(source_dropout_l[-1], (1,1,options['dim_word_per_factor'][factor]))
         target_dropout = shared_dropout_layer((n_timesteps_trg, n_samples, 1), use_noise, trng, retain_probability_target)
-        source_dropout = tensor.tile(source_dropout, (1,1,options['dim_word']))
         target_dropout = tensor.tile(target_dropout, (1,1,options['dim_word']))
     else:
-        rec_dropout = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        rec_dropout_r = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        rec_dropout_d = theano.shared(numpy.array([1.]*5, dtype='float32'))
-        emb_dropout = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        emb_dropout_r = theano.shared(numpy.array([1.]*2, dtype='float32'))
+        rec_dropout_l=[]
+        rec_dropout_r_l=[]
+        emb_dropout_l=[]
+        emb_dropout_r_l=[]
+        for factor in xrange(options['factors']):
+            rec_dropout_l.append(theano.shared(numpy.array([1.]*2, dtype='float32')))
+            rec_dropout_r_l.append(theano.shared(numpy.array([1.]*2, dtype='float32')))
+            emb_dropout_l.append(theano.shared(numpy.array([1.]*2, dtype='float32')))
+            emb_dropout_r_l.append(theano.shared(numpy.array([1.]*2, dtype='float32')))
+        rec_dropout_d = theano.shared(numpy.array([1.]*(4+options['factors']), dtype='float32'))
         emb_dropout_d = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        ctx_dropout_d = theano.shared(numpy.array([1.]*4, dtype='float32'))
+        ctx_dropout_d_l = [ theano.shared(numpy.array([1.]*2, dtype='float32')) for factor in xrange(options['factors']) ]
+        ctx_dropout_d_j= theano.shared(numpy.array([1.]*2, dtype='float32'))
 
     # word embedding for forward rnn (source)
-    emb = []
+    proj_l=[]
     for factor in range(options['factors']):
-        emb.append(tparams[embedding_name(factor)][x[factor].flatten()])
-    emb = concatenate(emb, axis=1)
-    emb = emb.reshape([n_timesteps, n_samples, options['dim_word']])
-    if options['use_dropout']:
-        emb *= source_dropout
+        #emb.append(tparams[embedding_name(factor)][x[factor].flatten()])
+        emb=tparams[embedding_name(factor)][x[factor].flatten()]
+        #emb = concatenate(emb, axis=1)
+        emb = emb.reshape([n_timesteps, n_samples, options['dim_word_per_factor'][factor]])
 
-    proj = get_layer_constr(options['encoder'])(tparams, emb, options,
-                                            prefix='encoder',
+        if options['use_dropout']:
+            emb *= source_dropout_l[factor]
+        proj_l.append(get_layer_constr(options['encoder'])(tparams, emb, options,
+                                            prefix= factored_layer_name('encoder',factor),
                                             mask=x_mask,
-                                            emb_dropout=emb_dropout, 
-                                            rec_dropout=rec_dropout,
-                                            profile=profile)
-    
+                                            emb_dropout=emb_dropout_l[factor],
+                                            rec_dropout=rec_dropout_l[factor],
+                                            profile=profile))
 
     # word embedding for backward rnn (source)
-    embr = []
+    projr_l=[]
     for factor in range(options['factors']):
-        embr.append(tparams[embedding_name(factor)][xr[factor].flatten()])
-    embr = concatenate(embr, axis=1)
-    embr = embr.reshape([n_timesteps, n_samples, options['dim_word']])
-    if options['use_dropout']:
-        embr *= source_dropout[::-1]
-
-    projr = get_layer_constr(options['encoder'])(tparams, embr, options,
-                                             prefix='encoder_r',
+        #embr.append(tparams[embedding_name(factor)][xr[factor].flatten()])
+        embr = tparams[embedding_name(factor)][xr[factor].flatten()]
+        #embr = concatenate(embr, axis=1)
+        embr = embr.reshape([n_timesteps, n_samples, options['dim_word_per_factor'][factor]])
+        if options['use_dropout']:
+            embr *= source_dropout_l[factor][::-1]
+        projr_l.append(get_layer_constr(options['encoder'])(tparams, embr, options,
+                                             prefix=factored_layer_name('encoder_r',factor),
                                              mask=xr_mask,
-                                             emb_dropout=emb_dropout_r,
-                                             rec_dropout=rec_dropout_r,
-                                             profile=profile)
+                                             emb_dropout=emb_dropout_r_l[factor],
+                                             rec_dropout=rec_dropout_r_l[factor],
+                                             profile=profile))
 
+
+    #we have one context for each factor, they will be concatenated after the attention has been applied
     # context will be the concatenation of forward and backward rnns
-    ctx = concatenate([proj[0], projr[0][::-1]], axis=proj[0].ndim-1)
+    ctx_l = []
+    for factor in xrange(options['factors']):
+        ctx_l.append(concatenate([proj_l[factor][0], projr_l[factor][0][::-1]], axis=proj_l[factor][0].ndim-1))
 
+    #TODO: think about using weights and tanh and adapt this: see section 2.1 of Barret Zoph and Kevin Knight (2016). "Multi-Source Neural Translation"
     # mean of the context (across time) will be used to initialize decoder rnn
-    ctx_mean = (ctx * x_mask[:, :, None]).sum(0) / x_mask.sum(0)[:, None]
+    ctx_mean = concatenate([ (ctx * x_mask[:, :, None]).sum(0) / x_mask.sum(0)[:, None] for ctx in ctx_l ], axis=1)
 
     # or you can use the last state of forward + backward encoder rnns
     # ctx_mean = concatenate([proj[0][-1], projr[0][-1]], axis=proj[0].ndim-2)
 
+    #This droput is OK
     if options['use_dropout']:
         ctx_mean *= shared_dropout_layer((n_samples, 2*options['dim']), use_noise, trng, retain_probability_hidden)
 
@@ -240,12 +267,13 @@ def build_model(tparams, options):
     # decoder - pass through the decoder conditional gru with attention
     proj = get_layer_constr(options['decoder'])(tparams, emb, options,
                                             prefix='decoder',
-                                            mask=y_mask, context=ctx,
+                                            mask=y_mask, context_l=ctx_l,
                                             context_mask=x_mask,
                                             one_step=False,
                                             init_state=init_state,
                                             emb_dropout=emb_dropout_d,
-                                            ctx_dropout=ctx_dropout_d,
+                                            ctx_dropout_l=ctx_dropout_d_l,
+                                            ctx_dropout_j=ctx_dropout_d_j,
                                             rec_dropout=rec_dropout_d,
                                             profile=profile)
     # hidden states of the decoder gru
@@ -254,12 +282,14 @@ def build_model(tparams, options):
     # weighted averages of context, generated by attention module
     ctxs = proj[1]
 
+    #This droput does not require any modification
     if options['use_dropout']:
         proj_h *= shared_dropout_layer((n_samples, options['dim']), use_noise, trng, retain_probability_hidden)
         emb *= shared_dropout_layer((n_samples, options['dim_word']), use_noise, trng, retain_probability_emb)
         ctxs *= shared_dropout_layer((n_samples, 2*options['dim']), use_noise, trng, retain_probability_hidden)
 
     # weights (alignment matrix) #####LIUCAN: this is where the attention vector is.
+    # WARNING: this is now a list with one element per input factor
     opt_ret['dec_alphas'] = proj[2]
 
     # compute word probabilities
@@ -299,55 +329,79 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     n_timesteps = x.shape[1]
     n_samples = x.shape[2]
 
+    #DEBUG
+    #tparams['ff_logit_b']  = numpy.zeros((options['n_words'],)).astype('float32')
+
     # word embedding (source), forward and backward
-    emb = []
-    embr = []
+    emb_l = []
+    embr_l = []
     for factor in range(options['factors']):
-        emb.append(tparams[embedding_name(factor)][x[factor].flatten()])
-        embr.append(tparams[embedding_name(factor)][xr[factor].flatten()])
-    emb = concatenate(emb, axis=1)
-    embr = concatenate(embr, axis=1)
-    emb = emb.reshape([n_timesteps, n_samples, options['dim_word']])
-    embr = embr.reshape([n_timesteps, n_samples, options['dim_word']])
+        emb_l.append(tparams[embedding_name(factor)][x[factor].flatten()])
+        embr_l.append(tparams[embedding_name(factor)][xr[factor].flatten()])
+    #emb = concatenate(emb, axis=1)
+    #embr = concatenate(embr, axis=1)
+    for factor in range(options['factors']):
+        emb_l[factor] = emb_l[factor].reshape([n_timesteps, n_samples, options['dim_word_per_factor'][factor]])
+        embr_l[factor] = embr_l[factor].reshape([n_timesteps, n_samples, options['dim_word_per_factor'][factor]])
 
     if options['use_dropout']:
         retain_probability_emb = 1-options['dropout_embedding']
         retain_probability_hidden = 1-options['dropout_hidden']
         retain_probability_source = 1-options['dropout_source']
         retain_probability_target = 1-options['dropout_target']
-        rec_dropout = theano.shared(numpy.array([retain_probability_hidden]*2, dtype='float32'))
-        rec_dropout_r = theano.shared(numpy.array([retain_probability_hidden]*2, dtype='float32'))
-        rec_dropout_d = theano.shared(numpy.array([retain_probability_hidden]*5, dtype='float32'))
-        emb_dropout = theano.shared(numpy.array([retain_probability_emb]*2, dtype='float32'))
-        emb_dropout_r = theano.shared(numpy.array([retain_probability_emb]*2, dtype='float32'))
+
+        rec_dropout_l=[]
+        rec_dropout_r_l=[]
+        for factor in range(options['factors']):
+            rec_dropout_l.append(theano.shared(numpy.array([retain_probability_hidden]*2, dtype='float32')))
+            rec_dropout_r_l.append(theano.shared(numpy.array([retain_probability_hidden]*2, dtype='float32')))
+        rec_dropout_d = theano.shared(numpy.array([retain_probability_hidden]*(4+options['factors']), dtype='float32'))
+
+        emb_dropout_l=[]
+        emb_dropout_r_l=[]
+        for factor in range(options['factors']):
+            emb_dropout_l.append(theano.shared(numpy.array([retain_probability_emb]*2, dtype='float32')))
+            emb_dropout_r_l.append(theano.shared(numpy.array([retain_probability_emb]*2, dtype='float32')))
         emb_dropout_d = theano.shared(numpy.array([retain_probability_emb]*2, dtype='float32'))
-        ctx_dropout_d = theano.shared(numpy.array([retain_probability_hidden]*4, dtype='float32'))
-        source_dropout = theano.shared(numpy.float32(retain_probability_source))
+
+        ctx_dropout_d_l=[]
+        for factor in xrange(options['factors']):
+            ctx_dropout_d_l.append(theano.shared(numpy.array([retain_probability_hidden]*2, dtype='float32')))
+        ctx_dropout_d_j=theano.shared(numpy.array([retain_probability_hidden]*2, dtype='float32'))
+
+        source_dropout_l = [theano.shared(numpy.float32(retain_probability_source)) for factor in range(options['factors']) ]
         target_dropout = theano.shared(numpy.float32(retain_probability_target))
-        emb *= source_dropout
-        embr *= source_dropout
+        for factor in range(options['factors']):
+            emb_l[factor] *= source_dropout
+            embr_l[factor] *= source_dropout
     else:
-        rec_dropout = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        rec_dropout_r = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        rec_dropout_d = theano.shared(numpy.array([1.]*5, dtype='float32'))
-        emb_dropout = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        emb_dropout_r = theano.shared(numpy.array([1.]*2, dtype='float32'))
+        rec_dropout_l = [theano.shared(numpy.array([1.]*2, dtype='float32')) for factor in range(options['factors']) ]
+        rec_dropout_r_l = [ theano.shared(numpy.array([1.]*2, dtype='float32')) for factor in range(options['factors']) ]
+        rec_dropout_d = theano.shared(numpy.array([1.]*(4+options['factors']), dtype='float32'))
+        emb_dropout_l = [ theano.shared(numpy.array([1.]*2, dtype='float32')) for factor in range(options['factors']) ]
+        emb_dropout_r_l = [ theano.shared(numpy.array([1.]*2, dtype='float32')) for factor in range(options['factors']) ]
         emb_dropout_d = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        ctx_dropout_d = theano.shared(numpy.array([1.]*4, dtype='float32'))
+        ctx_dropout_d_l = [ theano.shared(numpy.array([1.]*2, dtype='float32')) for factor in range(options['factors']) ]
+        ctx_dropout_d_j=theano.shared(numpy.array([1.]*2, dtype='float32'))
 
     # encoder
-    proj = get_layer_constr(options['encoder'])(tparams, emb, options,
-                                            prefix='encoder', emb_dropout=emb_dropout, rec_dropout=rec_dropout, profile=profile)
+    proj_l=[]
+    projr_l=[]
+    for factor in range(options['factors']):
+        proj_l.append(get_layer_constr(options['encoder'])(tparams, emb_l[factor], options,
+                                            prefix= factored_layer_name('encoder',factor), emb_dropout=emb_dropout_l[factor], rec_dropout=rec_dropout_l[factor], profile=profile))
 
-
-    projr = get_layer_constr(options['encoder'])(tparams, embr, options,
-                                             prefix='encoder_r', emb_dropout=emb_dropout_r, rec_dropout=rec_dropout_r, profile=profile)
-
+        projr_l.append(get_layer_constr(options['encoder'])(tparams, embr_l[factor], options,
+                                             prefix= factored_layer_name('encoder_r',factor), emb_dropout=emb_dropout_r_l[factor], rec_dropout=rec_dropout_r_l[factor], profile=profile))
+    ctx_l = []
+    for factor in xrange(options['factors']):
     # concatenate forward and backward rnn hidden states
-    ctx = concatenate([proj[0], projr[0][::-1]], axis=proj[0].ndim-1)
+        ctx_l.append(concatenate([proj_l[factor][0], projr_l[factor][0][::-1]], axis=proj_l[factor][0].ndim-1))
 
     # get the input for decoder rnn initializer mlp
-    ctx_mean = ctx.mean(0)
+    #TODO: think about using weights and tanh and adapt this: see section 2.1 of Barret Zoph and Kevin Knight (2016). "Multi-Source Neural Translation"
+    ctx_mean =  concatenate( [ ctx.mean(0) for ctx in ctx_l ], axis=1)
+
     # ctx_mean = concatenate([proj[0][-1],projr[0][-1]], axis=proj[0].ndim-2)
 
     if options['use_dropout']:
@@ -356,8 +410,9 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     init_state = get_layer_constr('ff')(tparams, ctx_mean, options,
                                     prefix='ff_state', activ='tanh')
 
+    #ctx is now a list
     print >>sys.stderr, 'Building f_init...',
-    outs = [init_state, ctx]
+    outs = [init_state ]+ctx_l
     f_init = theano.function([x], outs, name='f_init', profile=profile)
     print >>sys.stderr, 'Done'
 
@@ -376,22 +431,25 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     # apply one step of conditional gru with attention
     proj = get_layer_constr(options['decoder'])(tparams, emb, options,
                                             prefix='decoder',
-                                            mask=None, context=ctx,
+                                            mask=None, context_l=ctx_l,
                                             one_step=True,
                                             init_state=init_state,
                                             emb_dropout=emb_dropout_d,
-                                            ctx_dropout=ctx_dropout_d,
+                                            ctx_dropout_l=ctx_dropout_d_l,
+                                            ctx_dropout_j=ctx_dropout_d_j,
                                             rec_dropout=rec_dropout_d,
                                             profile=profile)
+
     # get the next hidden state
     next_state = proj[0]
 
     # get the weighted averages of context for this target word y
     ctxs = proj[1]
 
-    # alignment matrix (attention model)
+    # alignment matrix (attention model): Now it is a list
     dec_alphas = proj[2]
 
+    #nothing new to adjust
     if options['use_dropout']:
         next_state_up = next_state * retain_probability_hidden
         emb *= retain_probability_emb
@@ -422,11 +480,13 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     # compile a function to do the whole thing above, next word probability,
     # sampled word for the next target, next hidden state to be used
     print >>sys.stderr, 'Building f_next..',
-    inps = [y, ctx, init_state]
+    inps = [y] +ctx_l+ [init_state]
     outs = [next_probs, next_sample, next_state]
 
     if return_alignment:
-        outs.append(dec_alphas)
+        outs.extend(dec_alphas)
+
+    print >> sys.stderr, "tparams ff_logit_b: "+ str(tparams['ff_logit_b'].get_value())
 
     f_next = theano.function(inps, outs, name='f_next', profile=profile)
     print >>sys.stderr, 'Done'
@@ -471,18 +531,19 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
     for i in xrange(num_models):
         ret = f_init[i](x)
         next_state[i] = ret[0]
-        ctx0[i] = ret[1]
+        ctx0[i] = ret[1:]
     next_w = -1 * numpy.ones((1,)).astype('int64')  # bos indicator
 
     # x is a sequence of word ids followed by 0, eos id
     for ii in xrange(maxlen):
         for i in xrange(num_models):
-            ctx = numpy.tile(ctx0[i], [live_k, 1])
-            inps = [next_w, ctx, next_state[i]]
+            ctx_l = [numpy.tile(ctx0[i][j], [live_k, 1]) for j in xrange(len(ctx0[i])) ]
+            inps = [next_w] + ctx_l + [next_state[i]]
             ret = f_next[i](*inps)
             # dimension of dec_alpha (k-beam-size, number-of-input-hidden-units)
             next_p[i], next_w_tmp, next_state[i] = ret[0], ret[1], ret[2]
             if return_alignment:
+                #WARNING: this is now a list
                 dec_alphas[i] = ret[3]
 
             if suppress_unk:
@@ -504,8 +565,9 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             ranks_flat = cand_flat.argpartition(k-dead_k-1)[:(k-dead_k)]
 
             #averaging the attention weights accross models
+            #TODO: we only consider the first factor to compute alignment. Maybe an average would be more convenient?
             if return_alignment:
-                mean_alignment = sum(dec_alphas)/num_models
+                mean_alignment = sum([dec_alphas[i][0] for i in xrange(num_models) ])/num_models
 
             voc_size = next_p[0].shape[1]
             # index of each k-best hypothesis
@@ -636,8 +698,9 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
 
 def train(dim_word=100,  # word vector dimensionality
           dim=1000,  # the number of LSTM units
+          dim_per_factor=None,
           factors=1, # input factors
-          dim_per_factor=None, # list of word vector dimensionalities (one per factor): [250,200,50] for total dimensionality of 500
+          dim_word_per_factor=None, # list of word vector dimensionalities (one per factor): [250,200,50] for total dimensionality of 500
           encoder='gru',
           decoder='gru_cond',
           patience=10,  # early stopping patience
@@ -689,16 +752,24 @@ def train(dim_word=100,  # word vector dimensionality
     model_options = locals().copy()
 
 
+    if model_options['dim_word_per_factor'] == None:
+        if factors == 1:
+            model_options['dim_word_per_factor'] = [model_options['dim_word']]
+        else:
+            sys.stderr.write('Error: if using factored input, you must specify \'dim_word_per_factor\'\n')
+            sys.exit(1)
+
     if model_options['dim_per_factor'] == None:
         if factors == 1:
-            model_options['dim_per_factor'] = [model_options['dim_word']]
+            model_options['dim_per_factor'] = [model_options['dim']]
         else:
             sys.stderr.write('Error: if using factored input, you must specify \'dim_per_factor\'\n')
             sys.exit(1)
 
+
     assert(len(dictionaries) == factors + 1) # one dictionary per source factor + 1 for target factor
-    assert(len(model_options['dim_per_factor']) == factors) # each factor embedding has its own dimensionality
-    assert(sum(model_options['dim_per_factor']) == model_options['dim_word']) # dimensionality of factor embeddings sums up to total dimensionality of input embedding vector
+    assert(len(model_options['dim_word_per_factor']) == factors) # each factor embedding has its own dimensionality
+    assert(sum(model_options['dim_word_per_factor']) == model_options['dim_word']) # dimensionality of factor embeddings sums up to total dimensionality of input embedding vector
 
     # load dictionaries and invert them
     worddicts = [None] * len(dictionaries)
@@ -710,7 +781,9 @@ def train(dim_word=100,  # word vector dimensionality
             worddicts_r[ii][vv] = kk
 
     if n_words_src is None:
-	n_words_src = len(worddicts[0])
+        n_words_src=[]
+        for i in xrange(len(factors)):
+            n_words_src.append(len(worddicts[i]))
         model_options['n_words_src'] = n_words_src
     if n_words is None:
 	n_words = len(worddicts[1])
@@ -740,7 +813,7 @@ def train(dim_word=100,  # word vector dimensionality
                          shuffle_each_epoch=shuffle_each_epoch,
                          sort_by_length=sort_by_length,
                          indomain_source=domain_interpolation_indomain_datasets[0],
-                         indomain_target=domain_interpolation_indomain_datasets[1], 
+                         indomain_target=domain_interpolation_indomain_datasets[1],
                          interpolation_rate=domain_interpolation_cur,
                          maxibatch_size=maxibatch_size)
     else:
@@ -771,6 +844,9 @@ def train(dim_word=100,  # word vector dimensionality
 
     tparams = init_theano_params(params)
 
+    print >> sys.stderr, "ff_logit_b: "+ str(params['ff_logit_b'])
+    print >> sys.stderr, "tparams ff_logit_b: "+ str(tparams['ff_logit_b'].get_value())
+
     trng, use_noise, \
         x, x_mask, y, y_mask, \
         opt_ret, \
@@ -778,6 +854,9 @@ def train(dim_word=100,  # word vector dimensionality
         build_model(tparams, model_options)
 
     inps = [x, x_mask, y, y_mask]
+
+    print >> sys.stderr, "ff_logit_b: "+ str(params['ff_logit_b'])
+    print >> sys.stderr, "tparams ff_logit_b: "+ str(tparams['ff_logit_b'].get_value())
 
     if validFreq or sampleFreq:
         print 'Building sampler'
