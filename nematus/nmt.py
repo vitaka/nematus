@@ -486,7 +486,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     if return_alignment:
         outs.extend(dec_alphas)
 
-    print >> sys.stderr, "tparams ff_logit_b: "+ str(tparams['ff_logit_b'].get_value())
+    #print >> sys.stderr, "tparams ff_logit_b: "+ str(tparams['ff_logit_b'].get_value())
 
     f_next = theano.function(inps, outs, name='f_next', profile=profile)
     print >>sys.stderr, 'Done'
@@ -543,7 +543,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             # dimension of dec_alpha (k-beam-size, number-of-input-hidden-units)
             next_p[i], next_w_tmp, next_state[i] = ret[0], ret[1], ret[2]
             if return_alignment:
-                #WARNING: this is now a list
+                #these are the alphas for the first factor
                 dec_alphas[i] = ret[3]
 
             if suppress_unk:
@@ -565,9 +565,9 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             ranks_flat = cand_flat.argpartition(k-dead_k-1)[:(k-dead_k)]
 
             #averaging the attention weights accross models
-            #TODO: we only consider the first factor to compute alignment. Maybe an average would be more convenient?
+            #TODO: we only consider the first factor to compute alignment (value returned by f_next) Maybe an average would be more convenient?
             if return_alignment:
-                mean_alignment = sum([dec_alphas[i][0] for i in xrange(num_models) ])/num_models
+                mean_alignment = sum([dec_alphas[i] for i in xrange(num_models) ])/num_models
 
             voc_size = next_p[0].shape[1]
             # index of each k-best hypothesis
@@ -770,6 +770,7 @@ def train(dim_word=100,  # word vector dimensionality
     assert(len(dictionaries) == factors + 1) # one dictionary per source factor + 1 for target factor
     assert(len(model_options['dim_word_per_factor']) == factors) # each factor embedding has its own dimensionality
     assert(sum(model_options['dim_word_per_factor']) == model_options['dim_word']) # dimensionality of factor embeddings sums up to total dimensionality of input embedding vector
+    assert(factors <= MAXFACTORS) #we must not exceed maximum number of supported factors
 
     # load dictionaries and invert them
     worddicts = [None] * len(dictionaries)
@@ -844,8 +845,8 @@ def train(dim_word=100,  # word vector dimensionality
 
     tparams = init_theano_params(params)
 
-    print >> sys.stderr, "ff_logit_b: "+ str(params['ff_logit_b'])
-    print >> sys.stderr, "tparams ff_logit_b: "+ str(tparams['ff_logit_b'].get_value())
+    #print >> sys.stderr, "ff_logit_b: "+ str(params['ff_logit_b'])
+    #print >> sys.stderr, "tparams ff_logit_b: "+ str(tparams['ff_logit_b'].get_value())
 
     trng, use_noise, \
         x, x_mask, y, y_mask, \
@@ -855,8 +856,8 @@ def train(dim_word=100,  # word vector dimensionality
 
     inps = [x, x_mask, y, y_mask]
 
-    print >> sys.stderr, "ff_logit_b: "+ str(params['ff_logit_b'])
-    print >> sys.stderr, "tparams ff_logit_b: "+ str(tparams['ff_logit_b'].get_value())
+    #print >> sys.stderr, "ff_logit_b: "+ str(params['ff_logit_b'])
+    #print >> sys.stderr, "tparams ff_logit_b: "+ str(tparams['ff_logit_b'].get_value())
 
     if validFreq or sampleFreq:
         print 'Building sampler'
@@ -1122,6 +1123,15 @@ def train(dim_word=100,  # word vector dimensionality
                 break
 
         print 'Seen %d samples' % n_samples
+
+        #This is the end of an epoch. Save model
+        if not overwrite:
+            print 'Saving the model at the end of epoch  {}...'.format(eidx),
+            saveto_uidx = '{}.epoch{}.npz'.format(
+                os.path.splitext(saveto)[0], eidx)
+            numpy.savez(saveto_uidx, history_errs=history_errs,
+                        uidx=uidx, **unzip_from_theano(tparams))
+            print 'Done'
 
         if estop:
             break

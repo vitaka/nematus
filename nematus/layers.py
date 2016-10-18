@@ -18,6 +18,7 @@ from util import *
 from theano_util import *
 from alignment_util import *
 
+MAXFACTORS=6
 
 # layers: 'name': ('parameter initializer', 'feedforward')
 layers = {'ff': ('param_init_fflayer', 'fflayer'),
@@ -295,7 +296,7 @@ def param_init_gru_cond_multiple_encoders(options, params, prefix='gru_cond',
     # attention: combined -> hidden
     for factor in xrange(options['factors']):
         #W_comb_att = norm_weight(dim, dimctx)
-        W_comb_att = norm_weight(options['dim_per_factor'][factor], options['dim_per_factor'][factor]*2)
+        W_comb_att = norm_weight(options['dim'], options['dim_per_factor'][factor]*2)
         params[factored_layer_name(pp(prefix, 'W_comb_att'),factor)] = W_comb_att
 
     #different for each encoder
@@ -524,6 +525,7 @@ def gru_cond_layer_multiple_encoders(tparams, state_below, options, prefix='gru'
     #pctx_ = vector with U_a dot h_j for all j
     pctx_l =  [ tensor.dot(context*ctx_dropout_l[factor][0], tparams[ factored_layer_name(pp(prefix, 'Wc_att'),factor) ] ) + tparams[ factored_layer_name(pp(prefix, 'b_att'),factor) ] for factor,context in enumerate(context_l) ]
 
+
     def _slice(_x, n, dim):
         if _x.ndim == 3:
             return _x[:, :, n*dim:(n+1)*dim]
@@ -536,18 +538,92 @@ def gru_cond_layer_multiple_encoders(tparams, state_below, options, prefix='gru'
     state_below_ = tensor.dot(state_below*emb_dropout[1], tparams[pp(prefix, 'W')]) +\
         tparams[pp(prefix, 'b')]
 
-    def _step_slice(m_, x_, xx_, h_, ctx_, alpha_l, pctx_l, cc_l, rec_dropout, ctx_dropout_l,ctx_dropout_j,
+    #TODO: solution: create a version of scan that works with the maxmum number of allowed factors
+
+    def _step_slice_0(m_, x_, xx_, h_, ctx_, alpha_first_factor, pctx_0, cc_0,  rec_dropout, ctx_dropout_0,ctx_dropout_j,
+                    U, Wc, W_comb_att_0, U_att_0, c_tt_0, Ux, Wcx,
+                    U_nl, Ux_nl, b_nl, bx_nl):
+        cc_l=[cc_0]
+        pctx_l=[pctx_0]
+        ctx_dropout_l=[ctx_dropout_0]
+        W_comb_att_l=[W_comb_att_0]
+        U_att_l=[U_att_0]
+        c_tt_l=[c_tt_0]
+
+        return _step_slice(m_, x_, xx_, h_, ctx_, alpha_first_factor, pctx_l, cc_l, rec_dropout, ctx_dropout_l,ctx_dropout_j,
+                        U, Wc, W_comb_att_l, U_att_l, c_tt_l, Ux, Wcx,
+                        U_nl, Ux_nl, b_nl, bx_nl)
+
+    def _step_slice_1(m_, x_, xx_, h_, ctx_, alpha_first_factor, pctx_0, pctx_1, cc_0, cc_1, rec_dropout, ctx_dropout_0,ctx_dropout_1,ctx_dropout_j,
+                    U, Wc, W_comb_att_0,W_comb_att_1, U_att_0,U_att_1, c_tt_0,c_tt_1, Ux, Wcx,
+                    U_nl, Ux_nl, b_nl, bx_nl):
+        cc_l=[cc_0,cc_1]
+        pctx_l=[pctx_0, pctx_1]
+        ctx_dropout_l=[ctx_dropout_0,ctx_dropout_1]
+        W_comb_att_l=[W_comb_att_0,W_comb_att_1]
+        U_att_l=[U_att_0,U_att_1]
+        c_tt_l=[c_tt_0,c_tt_1]
+
+        return _step_slice(m_, x_, xx_, h_, ctx_, alpha_first_factor, pctx_l, cc_l, rec_dropout, ctx_dropout_l,ctx_dropout_j,
+                        U, Wc, W_comb_att_l, U_att_l, c_tt_l, Ux, Wcx,
+                        U_nl, Ux_nl, b_nl, bx_nl)
+
+    def _step_slice_2(m_, x_, xx_, h_, ctx_, alpha_first_factor, pctx_0, pctx_1, pctx_2, cc_0, cc_1, cc_2, rec_dropout, ctx_dropout_0,ctx_dropout_1, ctx_dropout_2, ctx_dropout_j,
+                    U, Wc, W_comb_att_0,W_comb_att_1, W_comb_att_2, U_att_0,U_att_1, U_att_2, c_tt_0,c_tt_1, c_tt_2, Ux, Wcx,
+                    U_nl, Ux_nl, b_nl, bx_nl):
+        cc_l=[cc_0,cc_1,cc_2]
+        pctx_l=[pctx_0, pctx_1 , pctx_2 ]
+        ctx_dropout_l=[ctx_dropout_0,ctx_dropout_1 ,ctx_dropout_2]
+        W_comb_att_l=[W_comb_att_0,W_comb_att_1, W_comb_att_2]
+        U_att_l=[U_att_0,U_att_1,U_att_2]
+        c_tt_l=[c_tt_0,c_tt_1,c_tt_2]
+
+        return _step_slice(m_, x_, xx_, h_, ctx_, alpha_first_factor, pctx_l, cc_l, rec_dropout, ctx_dropout_l,ctx_dropout_j,
+                        U, Wc, W_comb_att_l, U_att_l, c_tt_l, Ux, Wcx,
+                        U_nl, Ux_nl, b_nl, bx_nl)
+
+    def _step_slice_3(m_, x_, xx_, h_, ctx_, alpha_first_factor, pctx_0, pctx_1, pctx_2, pctx_3,  cc_0, cc_1, cc_2, cc_3, rec_dropout, ctx_dropout_0,ctx_dropout_1, ctx_dropout_2, ctx_dropout_3, ctx_dropout_j,
+                    U, Wc, W_comb_att_0,W_comb_att_1, W_comb_att_2, W_comb_att_3, U_att_0,U_att_1, U_att_2, U_att_3, c_tt_0,c_tt_1, c_tt_2, c_tt_3, Ux, Wcx,
+                    U_nl, Ux_nl, b_nl, bx_nl):
+        cc_l=[cc_0,cc_1,cc_2,cc_3]
+        pctx_l=[pctx_0, pctx_1 , pctx_2 , pctx_3 ]
+        ctx_dropout_l=[ctx_dropout_0,ctx_dropout_1 ,ctx_dropout_2 ,ctx_dropout_3]
+        W_comb_att_l=[W_comb_att_0,W_comb_att_1, W_comb_att_2 , W_comb_att_3]
+        U_att_l=[U_att_0,U_att_1,U_att_2,U_att_3]
+        c_tt_l=[c_tt_0,c_tt_1,c_tt_2,c_tt_3]
+
+        return _step_slice(m_, x_, xx_, h_, ctx_, alpha_first_factor, pctx_l, cc_l, rec_dropout, ctx_dropout_l,ctx_dropout_j,
+                        U, Wc, W_comb_att_l, U_att_l, c_tt_l, Ux, Wcx,
+                        U_nl, Ux_nl, b_nl, bx_nl)
+
+    def _step_slice_4(m_, x_, xx_, h_, ctx_, alpha_first_factor, pctx_0, pctx_1, pctx_2, pctx_3, pctx_4,  cc_0, cc_1, cc_2, cc_3, cc_4, rec_dropout, ctx_dropout_0,ctx_dropout_1, ctx_dropout_2, ctx_dropout_3, ctx_dropout_4, ctx_dropout_j, U, Wc, W_comb_att_0,W_comb_att_1, W_comb_att_2, W_comb_att_3, W_comb_att_4, U_att_0,U_att_1, U_att_2, U_att_3, U_att_4, c_tt_0,c_tt_1, c_tt_2, c_tt_3, c_tt_4, Ux, Wcx,
+                    U_nl, Ux_nl, b_nl, bx_nl):
+        cc_l=[cc_0,cc_1,cc_2,cc_3,cc_4]
+        pctx_l=[pctx_0, pctx_1 , pctx_2 , pctx_3, pctx_4 ]
+        ctx_dropout_l=[ctx_dropout_0,ctx_dropout_1 ,ctx_dropout_2 ,ctx_dropout_3,ctx_dropout_4]
+        W_comb_att_l=[W_comb_att_0,W_comb_att_1, W_comb_att_2 , W_comb_att_3, W_comb_att_4]
+        U_att_l=[U_att_0,U_att_1,U_att_2,U_att_3,U_att_4]
+        c_tt_l=[c_tt_0,c_tt_1,c_tt_2,c_tt_3,c_tt_4]
+
+        return _step_slice(m_, x_, xx_, h_, ctx_, alpha_first_factor, pctx_l, cc_l, rec_dropout, ctx_dropout_l,ctx_dropout_j,
+                        U, Wc, W_comb_att_l, U_att_l, c_tt_l, Ux, Wcx,
+                        U_nl, Ux_nl, b_nl, bx_nl)
+
+    def _step_slice_5(m_, x_, xx_, h_, ctx_, alpha_first_factor, pctx_0, pctx_1, pctx_2, pctx_3, pctx_4, pctx_5,  cc_0, cc_1, cc_2, cc_3, cc_4, cc_5, rec_dropout, ctx_dropout_0,ctx_dropout_1, ctx_dropout_2, ctx_dropout_3, ctx_dropout_4, ctx_dropout_5, ctx_dropout_j, U, Wc, W_comb_att_0,W_comb_att_1, W_comb_att_2, W_comb_att_3, W_comb_att_4, W_comb_att_5, U_att_0,U_att_1, U_att_2, U_att_3, U_att_4, U_att_5, c_tt_0,c_tt_1, c_tt_2, c_tt_3, c_tt_4, c_tt_5, Ux, Wcx,U_nl, Ux_nl, b_nl, bx_nl):
+        cc_l=[cc_0,cc_1,cc_2,cc_3,cc_4,cc_5]
+        pctx_l=[pctx_0, pctx_1 , pctx_2 , pctx_3, pctx_4 , pctx_5 ]
+        ctx_dropout_l=[ctx_dropout_0,ctx_dropout_1 ,ctx_dropout_2 ,ctx_dropout_3,ctx_dropout_4,ctx_dropout_5]
+        W_comb_att_l=[W_comb_att_0,W_comb_att_1, W_comb_att_2 , W_comb_att_3, W_comb_att_4, W_comb_att_5]
+        U_att_l=[U_att_0,U_att_1,U_att_2,U_att_3,U_att_4,U_att_5]
+        c_tt_l=[c_tt_0,c_tt_1,c_tt_2,c_tt_3,c_tt_4,c_tt_5]
+
+        return _step_slice(m_, x_, xx_, h_, ctx_, alpha_first_factor, pctx_l, cc_l, rec_dropout, ctx_dropout_l,ctx_dropout_j,
+                        U, Wc, W_comb_att_l, U_att_l, c_tt_l, Ux, Wcx,
+                        U_nl, Ux_nl, b_nl, bx_nl)
+
+    def _step_slice(m_, x_, xx_, h_, ctx_, alpha_first_factor, pctx_l, cc_l, rec_dropout, ctx_dropout_l,ctx_dropout_j,
                     U, Wc, W_comb_att_l, U_att_l, c_tt_l, Ux, Wcx,
                     U_nl, Ux_nl, b_nl, bx_nl):
-
-        #debug code
-        alpha_l=[alpha_l]
-        pctx_l=[pctx_l]
-        cc_l=[cc_l]
-        ctx_dropout_l=[ctx_dropout_l]
-        W_comb_att_l=[W_comb_att_l]
-        U_att_l = [U_att_l]
-        c_tt_l = [c_tt_l]
 
         # WARNING: this is slightly different from the equations shown in the paper NEURAL MACHINE TRANSLATION BY JOINTLY LEARNING TO ALIGN AND TRANSLATE
         # here there are kind of 2 steps, one without context and the other one with context
@@ -583,10 +659,10 @@ def gru_cond_layer_multiple_encoders(tparams, state_below, options, prefix='gru'
         ctx_l=[]
         alpha_l=[]
 
-        print >>sys.stderr, "Inside _step_slice"
-        print >>sys.stderr, str(pctx_l)
-        for i,t in enumerate(pctx_l):
-            print >> sys.stderr, str(i)+" "+str(t)
+        #print >>sys.stderr, "Inside _step_slice"
+        #print >>sys.stderr, str(pctx_l)
+        #for i,t in enumerate(pctx_l):
+        #    print >> sys.stderr, str(i)+" "+str(t)
 
         for factor,pctx_ in enumerate(pctx_l):
             #W_a dot s_{i-1}
@@ -599,7 +675,7 @@ def gru_cond_layer_multiple_encoders(tparams, state_below, options, prefix='gru'
             alpha = alpha.reshape([alpha.shape[0], alpha.shape[1]])
             alpha = tensor.exp(alpha - alpha.max(0, keepdims=True))
             #TODO: now there is a single context mask. We assume that the length of all the input sequences is the
-            #same one. This shuld be changes if we want to have inputs with different lengths
+            #same one. This shuld be changed if we want to have inputs with different lengths
             if context_mask:
                 alpha = alpha * context_mask
             #alpha for all j (SL sentence positions)
@@ -640,53 +716,44 @@ def gru_cond_layer_multiple_encoders(tparams, state_below, options, prefix='gru'
         #and this one? It is the mask
         h2 = m_[:, None] * h2 + (1. - m_)[:, None] * h1
 
+        #TODO: currently we only return alphas for the first factor. Could we return an average?
+
         return h2, ctx_, alpha_l[0].T  # pstate_, preact, preactx, r, u
 
     seqs = [mask, state_below_, state_belowx]
     #seqs = [mask, state_below_, state_belowx, state_belowc]
-    _step = _step_slice
+
+    functionDict={ 1: _step_slice_0, 2: _step_slice_1, 3: _step_slice_2 , 4: _step_slice_3 , 5: _step_slice_4 , 6: _step_slice_5  }
+
+    _step = functionDict[len(context_l)]
 
     shared_vars = [tparams[pp(prefix, 'U')],
-                   tparams[pp(prefix, 'Wc')],
-                   [ tparams[factored_layer_name(pp(prefix, 'W_comb_att'),factor)] for factor,context in enumerate(context_l) ][0],
-                [tparams[factored_layer_name(pp(prefix, 'U_att'),factor)] for factor,context in enumerate(context_l) ][0],
-                   [ tparams[factored_layer_name(pp(prefix, 'c_tt'),factor)] for factor,context in enumerate(context_l) ][0],
-                   tparams[pp(prefix, 'Ux')],
+                   tparams[pp(prefix, 'Wc')] ] + [ tparams[factored_layer_name(pp(prefix, 'W_comb_att'),factor)] for factor,context in enumerate(context_l) ] + [tparams[factored_layer_name(pp(prefix, 'U_att'),factor)] for factor,context in enumerate(context_l) ] + [ tparams[factored_layer_name(pp(prefix, 'c_tt'),factor)] for factor,context in enumerate(context_l) ] + [tparams[pp(prefix, 'Ux')],
                    tparams[pp(prefix, 'Wcx')],
                    tparams[pp(prefix, 'U_nl')],
                    tparams[pp(prefix, 'Ux_nl')],
                    tparams[pp(prefix, 'b_nl')],
                    tparams[pp(prefix, 'bx_nl')]]
 
-    print >>sys.stderr, str(pctx_l)
-    for i,t in enumerate(pctx_l):
-        print >> sys.stderr, str(i)+" "+str(t)
+
 
     if False:
-        pctx_l_t = theano.typed_list.TypedListType(pctx_l[0].type)
+        print >>sys.stderr, str(pctx_l)
         for i,t in enumerate(pctx_l):
-            pctx_l_t=theano.typed_list.basic.append(pctx_l_t,t)
-
-        context_l_t = theano.typed_list.TypedListType(context_l[0].type)
-        for i,t in enumerate(context_l):
-            context_l_t=theano.typed_list.basic.append(context_l_t,t)
-
-        ctx_dropout_l_t=theano.typed_list.TypedListType(ctx_dropout_l[0].type)
-        for i,t in enumerate(ctx_dropout_l):
-            ctx_dropout_l_t=theano.typed_list.basic.append(ctx_dropout_l_t,t)
+            print >> sys.stderr, str(i)+" "+str(t)
 
     if one_step:
-        rval = _step(*(seqs + [init_state, None, None, pctx_l[0], context_l[0], rec_dropout, ctx_dropout_l[0],ctx_dropout_j] +
+        rval = _step(*(seqs + [init_state, None, None ]  + pctx_l + context_l +  [ rec_dropout] + ctx_dropout_l + [ctx_dropout_j] +
                        shared_vars))
     else:
         rval, updates = theano.scan(_step,
                                     sequences=seqs,
                                     outputs_info=[init_state,
                                                   tensor.alloc(0., n_samples,
-                                                               dim*2),#prev ctx_l context.shape[2] = length of context dim
+                                                               dim*2),#prev ctx_ context.shape[2] = length of context dim
                                                  tensor.alloc(0., n_samples,
                                                                context_l[0].shape[0])], #prev alpha. context.shape[0] = maxlen
-                                    non_sequences=[ pctx_l[0], context_l[0], rec_dropout, ctx_dropout_l[0],ctx_dropout_j]+shared_vars,
+                                    non_sequences=  pctx_l + context_l + [rec_dropout] + ctx_dropout_l  + [ctx_dropout_j]+shared_vars,
                                     name=pp(prefix, '_layers'),
                                     n_steps=nsteps,
                                     profile=profile,
