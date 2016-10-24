@@ -43,7 +43,7 @@ def translate_model(queue, rqueue, pid, models, options, k, normalize, verbose, 
     def _translate(seq):
         # sample given an input sequence and obtain scores
         sample, score, word_probs, alignment = gen_sample(fs_init, fs_next,
-                                   numpy.array(seq).T.reshape([len(seq[0]), len(seq), 1]),
+                                   numpy.array(seq).T.reshape([len(seq[0]), len(seq), 1]), factors_tl=options['factors_tl']
                                    trng=trng, k=k, maxlen=200,
                                    stochastic=False, argmax=False, return_alignment=return_alignment, suppress_unk=suppress_unk)
 
@@ -238,7 +238,7 @@ def main(models, source_file, saveto, save_alignment=None, k=5,
                     print_matrix(alignment[j], save_alignment)
         else:
             samples, scores, word_probs, alignment = trans
-    
+
             saveto.write(_seqs2words(samples) + "\n")
             if print_word_probabilities:
                 for prob in word_probs:
@@ -286,5 +286,5 @@ if __name__ == "__main__":
 
     main(args.models, args.input,
          args.output, k=args.k, normalize=args.n, n_process=args.p,
-         chr_level=args.c, verbose=args.v, nbest=args.n_best, suppress_unk=args.suppress_unk, 
+         chr_level=args.c, verbose=args.v, nbest=args.n_best, suppress_unk=args.suppress_unk,
          print_word_probabilities = args.print_word_probabilities, save_alignment=args.output_alignment, a_json=args.json_alignment)
