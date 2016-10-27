@@ -88,7 +88,7 @@ def init_params(options):
     for factor in range(options['factors']):
         params[embedding_name(factor)] = norm_weight(options['n_words_src'], options['dim_per_factor'][factor])
 
-    for factor in range(options['factors_tl'][:-1]):
+    for factor in range(options['factors_tl']-1):
         params[embedding_name(factor)+'_dec'] = norm_weight(options['n_words'][factor], options['dim_word_per_factor_tl'][factor])
 
 
@@ -103,7 +103,7 @@ def init_params(options):
                                               dim=options['dim'])
     ctxdim = 2 * options['dim']
 
-    for factor in xrange(options['factors_tl'][:-1]):
+    for factor in xrange(options['factors_tl']-1):
         # init_state, init_cell
         params = get_layer_param('ff')(options, params, prefix=factored_layer_name('ff_state',factor),
                                     nin=ctxdim, nout=options['dim_per_factor_tl'][factor])
@@ -163,15 +163,15 @@ def build_model(tparams, options):
         rec_dropout = shared_dropout_layer((2, n_samples, options['dim']), use_noise, trng, retain_probability_hidden)
         rec_dropout_r = shared_dropout_layer((2, n_samples, options['dim']), use_noise, trng, retain_probability_hidden)
         rec_dropout_d_l=[]
-        for factor in xrange(options['factors_tl'][:-1]):
+        for factor in xrange(options['factors_tl']-1):
             rec_dropout_d_l.append(shared_dropout_layer((5, n_samples, options['dim']), use_noise, trng, retain_probability_hidden))
         emb_dropout = shared_dropout_layer((2, n_samples, options['dim_word']), use_noise, trng, retain_probability_emb)
         emb_dropout_r = shared_dropout_layer((2, n_samples, options['dim_word']), use_noise, trng, retain_probability_emb)
         emb_dropout_d_l=[]
-        for factor in xrange(options['factors_tl'][:-1]):
+        for factor in xrange(options['factors_tl']-1):
             emb_dropout_d_l.append(shared_dropout_layer((2, n_samples, options['dim_word_per_factor_tl'][factor]), use_noise, trng, retain_probability_emb))
         ctx_dropout_d_l= []
-        for factor in xrange(options['factors_tl'][:-1]):
+        for factor in xrange(options['factors_tl']-1):
             ctx_dropout_d.append(shared_dropout_layer((4, n_samples, 2*options['dim']), use_noise, trng, retain_probability_hidden))
         source_dropout = shared_dropout_layer((n_timesteps, n_samples, 1), use_noise, trng, retain_probability_source)
         source_dropout = tensor.tile(source_dropout, (1,1,options['dim_word']))
@@ -179,11 +179,11 @@ def build_model(tparams, options):
     else:
         rec_dropout = theano.shared(numpy.array([1.]*2, dtype='float32'))
         rec_dropout_r = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        rec_dropout_d_l = [ theano.shared(numpy.array([1.]*5, dtype='float32')) for i in xrange(options['factors_tl'][:-1]) ]
+        rec_dropout_d_l = [ theano.shared(numpy.array([1.]*5, dtype='float32')) for i in xrange(options['factors_tl']-1) ]
         emb_dropout = theano.shared(numpy.array([1.]*2, dtype='float32'))
         emb_dropout_r = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        emb_dropout_d_l = [ theano.shared(numpy.array([1.]*2, dtype='float32')) for i in xrange(options['factors_tl'][:-1]) ]
-        ctx_dropout_d_l = [ theano.shared(numpy.array([1.]*4, dtype='float32')) for i in xrange(options['factors_tl'][:-1]) ]
+        emb_dropout_d_l = [ theano.shared(numpy.array([1.]*2, dtype='float32')) for i in xrange(options['factors_tl']-1) ]
+        ctx_dropout_d_l = [ theano.shared(numpy.array([1.]*4, dtype='float32')) for i in xrange(options['factors_tl']-1) ]
 
     # word embedding for forward rnn (source)
     emb = []
@@ -239,7 +239,7 @@ def build_model(tparams, options):
     #shape of y: n_timesteps x n_samples
     #word_embeddings_tl = n_words x dim_word
 
-    for factor in xrange(options['factors_tl'][:-1]):
+    for factor in xrange(options['factors_tl']-1):
         y = tensor.matrix( factored_layer_name('y',factor) , dtype='int64')
         y.tag.test_value = (numpy.random.rand(8, 10)*100).astype('int64')
         y_mask = tensor.matrix( factored_layer_name('y_mask',factor) , dtype='float32')
@@ -330,7 +330,7 @@ def build_model(tparams, options):
     #for each factor, make product of probs and embeddings, concatenate them all
     #and feed the generator feed-forward
     generator_input_l=[]
-    for factor in xrange(options['factors_tl'][:-1]):
+    for factor in xrange(options['factors_tl']-1):
         #emb: n_timesteps * n_samples x dim_word_per_factor_tl[factor]
         emb = tensor.dot(probs_l[factor],tparams[ embedding_name(factor)+'_dec'])
         generator_input_l.append(emb)
@@ -343,8 +343,9 @@ def build_model(tparams, options):
     generator_probs=probs = tensor.nnet.softmax(generator_output)
 
     #last factor: surface form
-    factor=factors_tl-1
+    factor=options['factors_tl']-1
     #compute cost of last factor; compute final cost
+    #shape of y: n_timesteps x n_samples
     y = tensor.matrix( factored_layer_name('y',factor) , dtype='int64')
     y.tag.test_value = (numpy.random.rand(8, 10)*100).astype('int64')
     y_mask = tensor.matrix( factored_layer_name('y_mask',factor) , dtype='float32')
@@ -358,6 +359,7 @@ def build_model(tparams, options):
     cost = cost.reshape([y.shape[0], y.shape[1]])
     cost = (cost * y_mask).sum(0)
 
+    #cost per sample
     final_cost = cost + options['lambda_parameter']*sum(cost_l)/len(cost_l)
 
     #print "Print out in build_model()"
@@ -392,23 +394,23 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
         retain_probability_target = 1-options['dropout_target']
         rec_dropout = theano.shared(numpy.array([retain_probability_hidden]*2, dtype='float32'))
         rec_dropout_r = theano.shared(numpy.array([retain_probability_hidden]*2, dtype='float32'))
-        rec_dropout_d_l = [theano.shared(numpy.array([retain_probability_hidden]*5, dtype='float32')) for i in xrange(options['factors_tl'][:-1])]
+        rec_dropout_d_l = [theano.shared(numpy.array([retain_probability_hidden]*5, dtype='float32')) for i in xrange(options['factors_tl']-1)]
         emb_dropout = theano.shared(numpy.array([retain_probability_emb]*2, dtype='float32'))
         emb_dropout_r = theano.shared(numpy.array([retain_probability_emb]*2, dtype='float32'))
-        emb_dropout_d_l = [ theano.shared(numpy.array([retain_probability_emb]*2, dtype='float32')) for i in xrange(options['factors_tl'][:-1]) ]
-        ctx_dropout_d_l = [ theano.shared(numpy.array([retain_probability_hidden]*4, dtype='float32')) for i in xrange(options['factors_tl'][:-1]) ]
+        emb_dropout_d_l = [ theano.shared(numpy.array([retain_probability_emb]*2, dtype='float32')) for i in xrange(options['factors_tl']-1) ]
+        ctx_dropout_d_l = [ theano.shared(numpy.array([retain_probability_hidden]*4, dtype='float32')) for i in xrange(options['factors_tl']-1) ]
         source_dropout = theano.shared(numpy.float32(retain_probability_source))
-        target_dropout_l = [theano.shared(numpy.float32(retain_probability_target)) for i in xrange(options['factors_tl'][:-1]) ]
+        target_dropout_l = [theano.shared(numpy.float32(retain_probability_target)) for i in xrange(options['factors_tl']-1) ]
         emb *= source_dropout
         embr *= source_dropout
     else:
         rec_dropout = theano.shared(numpy.array([1.]*2, dtype='float32'))
         rec_dropout_r = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        rec_dropout_d_l = [theano.shared(numpy.array([1.]*5, dtype='float32')) for i in xrange(options['factors_tl'][:-1])]
+        rec_dropout_d_l = [theano.shared(numpy.array([1.]*5, dtype='float32')) for i in xrange(options['factors_tl']-1)]
         emb_dropout = theano.shared(numpy.array([1.]*2, dtype='float32'))
         emb_dropout_r = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        emb_dropout_d_l = [theano.shared(numpy.array([1.]*2, dtype='float32')) for i in xrange(options['factors_tl'][:-1])]
-        ctx_dropout_d_l = [theano.shared(numpy.array([1.]*4, dtype='float32')) for i in xrange(options['factors_tl'][:-1])]
+        emb_dropout_d_l = [theano.shared(numpy.array([1.]*2, dtype='float32')) for i in xrange(options['factors_tl']-1)]
+        ctx_dropout_d_l = [theano.shared(numpy.array([1.]*4, dtype='float32')) for i in xrange(options['factors_tl']-1)]
 
     # encoder
     proj = get_layer_constr(options['encoder'])(tparams, emb, options,
@@ -438,7 +440,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
 
     dec_alphas_l=[]
 
-    for factor in xrange(options['factors_tl'][:-1]):
+    for factor in xrange(options['factors_tl']-1):
         init_state = get_layer_constr('ff')(tparams, ctx_mean, options,
                                     prefix=factored_layer_name('ff_state',factor), activ='tanh')
         init_state_l.append(init_state)
@@ -505,14 +507,14 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
         next_probs_l.append(next_probs)
 
 
-    print >>sys.stderr, 'Building f_init"
+    print >>sys.stderr, 'Building f_init'
     outs = init_state_l + [ctx]
     f_init = theano.function([x], outs, name='f_init', profile=profile)
     print >>sys.stderr, 'Done'
 
     #surface form generator
     generator_input_l=[]
-    for factor in xrange(options['factors_tl'][:-1]):
+    for factor in xrange(options['factors_tl']-1):
         #emb: n_timesteps * n_samples x dim_word_per_factor_tl[factor]
         emb = tensor.dot(next_probs_l[factor],tparams[ embedding_name(factor)+'_dec'])
         generator_input_l.append(emb)
@@ -529,9 +531,9 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
 
     # compile a function to do the whole thing above, next word probability,
     # sampled word for the next target, next hidden state to be used
-    print >>sys.stderr, 'Building f_next"
+    print >>sys.stderr, 'Building f_next'
     inps = y_l + [ctx] + init_state_inputs_l
-    outs = [next_probs, next_sample] + next_state_l
+    outs = [next_probs, next_sample] + next_state_l + next_probs_l
 
     if return_alignment:
         outs.extend(dec_alphas_l)
@@ -545,7 +547,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
 # generate sample, either with stochastic sampling or beam search. Note that,
 # this function iteratively calls f_init and f_next functions.
 def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
-               stochastic=True, argmax=False, return_alignment=False, suppress_unk=False):
+               stochastic=True, argmax=False, return_alignment=False, suppress_unk=False, inversegenerationdict=dict()):
 
     # k is the beam size we have
     if k > 1:
@@ -572,9 +574,10 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
     # for ensemble decoding, we keep track of states and probability distribution
     # for each model in the ensemble
     num_models = len(f_init)
-    next_state = [None]*num_models
+    next_state_l = [None]*num_models
     ctx0 = [None]*num_models
     next_p = [None]*num_models
+    next_p_factors=[None]*num_models
     dec_alphas = [None]*num_models
     # get initial state of decoder rnn and encoder context
     for i in xrange(num_models):
@@ -592,10 +595,10 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
             #outs = [next_probs, next_sample] + next_state_l
             ret = f_next[i](*inps)
             # dimension of dec_alpha (k-beam-size, number-of-input-hidden-units)
-            next_p[i], next_w_tmp, next_state_l[i] = ret[0], ret[1], ret[2:2+factors_tl-1]
+            next_p[i], next_w_tmp, next_state_l[i], next_p_factors[i] = ret[0], ret[1], ret[2:2+factors_tl-1],ret[2+factors_tl-1:2+2*(factors_tl-1)]
             if return_alignment:
                 #we only consider alphas of first factor
-                dec_alphas[i] = ret[2+factors_tl-1]
+                dec_alphas[i] = ret[2+2*(factors_tl-1)]
             if suppress_unk:
                 next_p[i][:,1] = -numpy.inf
         if stochastic:
@@ -608,11 +611,16 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
             if nw == 0:
                 break
         else:
+            #hyp_scores is a vector of live_k scores
+            #hyp_scores[:, None] contains live_k rows and 1 column
+            #next_p[i]= live_k x n_words
             cand_scores = hyp_scores[:, None] - sum(numpy.log(next_p))
             probs = sum(next_p)/num_models
             cand_flat = cand_scores.flatten()
             probs_flat = probs.flatten()
             ranks_flat = cand_flat.argpartition(k-dead_k-1)[:(k-dead_k)]
+            #one element per TL factor: each element is nparray: live_k x n_words
+            probs_factors=  [ sum(next_p_factors)[:][factor]/num_models  for factor in xrange(factors_tl-1) ]
 
             #averaging the attention weights accross models
             if return_alignment:
@@ -627,6 +635,8 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
             new_hyp_samples = []
             new_hyp_scores = numpy.zeros(k-dead_k).astype('float32')
             new_word_probs = []
+            #one element per hypothesis
+            new_word_probs_factors = []
             new_hyp_states = []
             if return_alignment:
                 # holds the history of attention weights for each time step for each of the surviving hypothesis
@@ -639,13 +649,23 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
                 new_hyp_samples.append(hyp_samples[ti]+[wi])
                 new_word_probs.append(word_probs[ti] + [probs_flat[ranks_flat[idx]].tolist()])
                 new_hyp_scores[idx] = copy.copy(costs[idx])
-                new_hyp_states.append([copy.copy(next_state[i][ti]) for i in xrange(num_models)])
+                new_word_probs_factors.append([ probs_factors[factor][ti]  for factor in xrange(factors_tl-1) ])
+
+                #new_hyp_states.append([copy.copy(next_state_l[i][ti]) for i in xrange(num_models)])
+                new_element=[]
+                for i in xrange(num_models):
+                    factorlist=[]
+                    for factor in xrange(factors_tl-1):
+                        factorlist.append(copy.copy(next_state_l[i][factor][ti]))
+                    new_element.append(factorlist)
+                new_hyp_states.append(new_element)
+
+
                 if return_alignment:
                     # get history of attention weights for the current hypothesis
                     new_hyp_alignment[idx] = copy.copy(hyp_alignment[ti])
                     # extend the history with current attention weights
                     new_hyp_alignment[idx].append(mean_alignment[ti])
-
 
             # check the finished samples
             new_live_k = 0
@@ -653,6 +673,7 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
             hyp_scores = []
             hyp_states = []
             word_probs = []
+            word_probs_factors =[]
             if return_alignment:
                 hyp_alignment = []
 
@@ -671,6 +692,7 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
                     hyp_scores.append(new_hyp_scores[idx])
                     hyp_states.append(new_hyp_states[idx])
                     word_probs.append(new_word_probs[idx])
+                    word_probs_factors.append(new_word_probs_factors[idx])
                     if return_alignment:
                         hyp_alignment.append(new_hyp_alignment[idx])
             hyp_scores = numpy.array(hyp_scores)
@@ -682,8 +704,36 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
             if dead_k >= k:
                 break
 
-            next_w = numpy.array([w[-1] for w in hyp_samples])
-            next_state = [numpy.array(state) for state in zip(*hyp_states)]
+            # we are using a dictionary to select which intermediate
+            # factors have generated the final surface forms and
+            # use them as an input to the decoders
+            # for homograph words, we choose the combination of factors
+            # with the highest probability
+            #
+            #next_w = numpy.array([w[-1] for w in hyp_samples])
+            next_w_l=[ [] for factor in xrange(factors_tl-1) ]
+            #first inefficient version:
+            for hyp_idx,w in enumerate(hyp_samples):
+                # we will always find the word in the dictionary since
+                # we are operating with numbers and OOVs are already mapped to UNK
+                analyses=inversegenerationdict[w[-1]]
+                if len(analyses) == 1:
+                    for factor in xrange(factors_tl-1):
+                        next_w_l[factor].append(analyses[0][factor])
+                else:
+                    #the surface form we have generated is ambiguous:
+                    #find the most likely analysis in the prob distribution
+                    #of the factors
+                    analysis_probs=[]
+                    for analysis in analyses:
+                        analysis_probs.append(   sum(  word_probs_factors[hyp_idx][factor][analysis[factor]] for factor in xrange(factors_tl-1))   )
+                    max_idx=numpy.argmax(numpy.array(analysis_probs))
+                    for factor in xrange(factors_tl-1):
+                        next_w_l[factor].append(analyses[max_idx][factor])
+            for i in xrange(len(next_w_l)):
+                next_w_l[i]=numpy.array(next_w_l[i])
+
+            next_state_l = [ [numpy.array(factor_state) for factor_state in state ] for state in zip(*hyp_states)]
 
     if not stochastic:
         # dump every remaining one
@@ -1101,7 +1151,7 @@ def train(dim_word=100,  # word vector dimensionality
                     stochastic = True
 
                     sample, score, sample_word_probs, alignment = gen_sample(f_init, f_next,
-                                               x[:, :, jj][:, :, None],factors_tl=factors_tl
+                                               x[:, :, jj][:, :, None],factors_tl=factors_tl,
                                                trng=trng, k=1,
                                                maxlen=30,
                                                stochastic=stochastic,
