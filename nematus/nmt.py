@@ -796,10 +796,9 @@ def train(dim_word=100,  # word vector dimensionality
         try:
             with open('%s.json' % saveto, 'rb') as f:
                 loaded_model_options = json.load(f)
+                model_options.update(loaded_model_options)
         except:
-            with open('%s.pkl' % saveto, 'rb') as f:
-                loaded_model_options = pkl.load(f)
-        model_options.update(loaded_model_options)
+            pass
 
     print 'Loading data'
     domain_interpolation_cur = None
