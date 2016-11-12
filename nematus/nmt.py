@@ -1381,6 +1381,15 @@ def train(dim_word=100,  # word vector dimensionality
 
         print 'Seen %d samples' % n_samples
 
+        #This is the end of an epoch. Save model
+        if not overwrite:
+            print 'Saving the model at the end of epoch  {}...'.format(eidx),
+            saveto_uidx = '{}.epoch{}.npz'.format(
+                os.path.splitext(saveto)[0], eidx)
+            numpy.savez(saveto_uidx, history_errs=history_errs,
+                        uidx=uidx, **unzip_from_theano(tparams))
+            print 'Done'
+
         if estop:
             break
 
