@@ -88,7 +88,7 @@ def init_params(options):
     for factor in range(options['factors']):
         params[embedding_name(factor)] = norm_weight(options['n_words_src'], options['dim_per_factor'][factor])
 
-    for factor in range(options['factors_tl']-1):
+    for factor in range(options['factors_tl']):
         params[embedding_name(factor)+'_dec'] = norm_weight(options['n_words'][factor], options['dim_word_per_factor_tl'][factor])
 
 
@@ -103,16 +103,25 @@ def init_params(options):
                                               dim=options['dim'])
     ctxdim = 2 * options['dim']
 
-    for factor in xrange(options['factors_tl']-1):
+    for factor in xrange(options['factors_tl']):
         # init_state, init_cell
         params = get_layer_param('ff')(options, params, prefix=factored_layer_name('ff_state',factor),
                                     nin=ctxdim, nout=options['dim_per_factor_tl'][factor])
-        # decoder
-        params = get_layer_param(options['decoder'])(options, params,
-                                                  prefix=factored_layer_name('decoder',factor),
-                                                  nin=options['dim_word_per_factor_tl'][factor],
-                                                  dim=options['dim_per_factor_tl'][factor],
-                                                  dimctx=ctxdim)
+
+        if factor == options['factors_tl'] -1:
+            params = get_layer_param('gru_2inputs')(options, params,
+                                                      prefix='rnngenerator',
+                                                      nin=options['dim_word_per_factor_tl'][factor],
+                                                      ninc=sum(options['dim_word_per_factor_tl'][:-1]),
+                                                      dim=options['dim_per_factor_tl'][factor])
+
+        else:
+            # decoder
+            params = get_layer_param(options['decoder'])(options, params,
+                                                      prefix=factored_layer_name('decoder',factor),
+                                                      nin=options['dim_word_per_factor_tl'][factor],
+                                                      dim=options['dim_per_factor_tl'][factor],
+                                                      dimctx=ctxdim)
         # readout
         params = get_layer_param('ff')(options, params, prefix=factored_layer_name('ff_logit_lstm',factor),
                                     nin=options['dim_per_factor_tl'][factor], nout=options['dim_word_per_factor_tl'][factor],
@@ -120,7 +129,13 @@ def init_params(options):
         params = get_layer_param('ff')(options, params, prefix=factored_layer_name('ff_logit_prev',factor),
                                     nin=options['dim_word_per_factor_tl'][factor],
                                     nout=options['dim_word_per_factor_tl'][factor], ortho=False)
-        params = get_layer_param('ff')(options, params, prefix=factored_layer_name('ff_logit_ctx',factor),
+
+        if factor == options['factors_tl'] -1:
+            params = get_layer_param('ff')(options, params,prefix=factored_layer_name('ff_logit_ctx',factor),
+                                    nin=sum(options['dim_word_per_factor_tl'][:-1]), nout=options['dim_word_per_factor_tl'][factor],
+                                    ortho=False)
+        else:
+            params = get_layer_param('ff')(options, params,prefix=factored_layer_name('ff_logit_ctx',factor),
                                     nin=ctxdim, nout=options['dim_word_per_factor_tl'][factor],
                                     ortho=False)
         params = get_layer_param('ff')(options, params, prefix=factored_layer_name('ff_logit',factor),
@@ -128,9 +143,9 @@ def init_params(options):
                                     nout=options['n_words'][factor])
 
     #final FF that generates surface forms
-    params = get_layer_param('ff')(options, params, prefix='ff_generator',
-                                nin=sum(options['dim_word_per_factor_tl'][:-1]),
-                                nout=options['n_words'][-1]) #last factor has not associated decoder and depends on the other factors
+    #params = get_layer_param('ff')(options, params, prefix='ff_generator',
+    #                            nin=sum(options['dim_word_per_factor_tl'][:-1]),
+    #                            nout=options['n_words'][-1]) #last factor has not associated decoder and depends on the other factors
 
     return params
 
@@ -163,13 +178,15 @@ def build_model(tparams, options):
         rec_dropout = shared_dropout_layer((2, n_samples, options['dim']), use_noise, trng, retain_probability_hidden)
         rec_dropout_r = shared_dropout_layer((2, n_samples, options['dim']), use_noise, trng, retain_probability_hidden)
         rec_dropout_d_l=[]
-        for factor in xrange(options['factors_tl']-1):
-            rec_dropout_d_l.append(shared_dropout_layer((5, n_samples, options['dim']), use_noise, trng, retain_probability_hidden))
+        for factor in xrange(options['factors_tl']):
+            rec_dropout_d_l.append(shared_dropout_layer((5, n_samples, options['dim_per_factor_tl'][factor]), use_noise, trng, retain_probability_hidden))
         emb_dropout = shared_dropout_layer((2, n_samples, options['dim_word']), use_noise, trng, retain_probability_emb)
         emb_dropout_r = shared_dropout_layer((2, n_samples, options['dim_word']), use_noise, trng, retain_probability_emb)
         emb_dropout_d_l=[]
-        for factor in xrange(options['factors_tl']-1):
+        for factor in xrange(options['factors_tl']):
             emb_dropout_d_l.append(shared_dropout_layer((2, n_samples, options['dim_word_per_factor_tl'][factor]), use_noise, trng, retain_probability_emb))
+        emb_dropout_d_factors=shared_dropout_layer((2, n_samples, sum(options['dim_word_per_factor_tl'][:-1])), use_noise, trng, retain_probability_emb)
+
         ctx_dropout_d_l= []
         for factor in xrange(options['factors_tl']-1):
             ctx_dropout_d.append(shared_dropout_layer((4, n_samples, 2*options['dim']), use_noise, trng, retain_probability_hidden))
@@ -179,10 +196,11 @@ def build_model(tparams, options):
     else:
         rec_dropout = theano.shared(numpy.array([1.]*2, dtype='float32'))
         rec_dropout_r = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        rec_dropout_d_l = [ theano.shared(numpy.array([1.]*5, dtype='float32')) for i in xrange(options['factors_tl']-1) ]
+        rec_dropout_d_l = [ theano.shared(numpy.array([1.]*5, dtype='float32')) for i in xrange(options['factors_tl']) ]
         emb_dropout = theano.shared(numpy.array([1.]*2, dtype='float32'))
         emb_dropout_r = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        emb_dropout_d_l = [ theano.shared(numpy.array([1.]*2, dtype='float32')) for i in xrange(options['factors_tl']-1) ]
+        emb_dropout_d_l = [ theano.shared(numpy.array([1.]*2, dtype='float32')) for i in xrange(options['factors_tl']) ]
+        emb_dropout_d_factors= theano.shared(numpy.array([1.]*2, dtype='float32'))
         ctx_dropout_d_l = [ theano.shared(numpy.array([1.]*4, dtype='float32')) for i in xrange(options['factors_tl']-1) ]
 
     # word embedding for forward rnn (source)
@@ -332,20 +350,17 @@ def build_model(tparams, options):
     generator_input_l=[]
     for factor in xrange(options['factors_tl']-1):
         #emb: n_timesteps * n_samples x dim_word_per_factor_tl[factor]
-        emb = tensor.dot(probs_l[factor],tparams[ embedding_name(factor)+'_dec'])
+        emb = tensor.dot(probs_l[factor],tparams[ embedding_name(factor)+'_dec']).reshape([n_timesteps_trg, n_samples,options['dim_word_per_factor_tl'][factor]])
         generator_input_l.append(emb)
     generator_input=tensor.concatenate(generator_input_l,axis=-1)
 
-    #FF + softmax
-    generator_output=get_layer_constr('ff')(tparams, generator_input, options,
-                               prefix='ff_generator', activ='tanh')
-    #we do not need to reshape because generator output already has 2 dimensions: n_timesteps*n_samples x n_words
-    generator_probs=probs = tensor.nnet.softmax(generator_output)
 
     #last factor: surface form
     factor=options['factors_tl']-1
-    #compute cost of last factor; compute final cost
-    #shape of y: n_timesteps x n_samples
+    #Our generator is a GRU-based RNN: at each timestep, its
+    #inputs are the embeddings of the previously generated surface form,
+    #and the embeddings of all the factors generated by the decoders.
+
     y = tensor.matrix( factored_layer_name('y',factor) , dtype='int64')
     y.tag.test_value = (numpy.random.rand(8, 10)*100).astype('int64')
     y_mask = tensor.matrix( factored_layer_name('y_mask',factor) , dtype='float32')
@@ -353,9 +368,68 @@ def build_model(tparams, options):
     y_l.append(y)
     y_mask_l.append(y_mask)
 
+
+    emb = tparams[ embedding_name(factor)+'_dec'][y.flatten()]
+    emb = emb.reshape([n_timesteps_trg, n_samples, options['dim_word_per_factor_tl'][factor]])
+
+    emb_shifted = tensor.zeros_like(emb)
+    emb_shifted = tensor.set_subtensor(emb_shifted[1:], emb[:-1])
+    emb = emb_shifted
+
+
+    if options['use_dropout']:
+        target_dropout=shared_dropout_layer((n_timesteps_trg, n_samples, 1), use_noise, trng, retain_probability_target)
+        target_dropout = tensor.tile(target_dropout, (1,1,options['dim_word_per_factor_tl'][factor]))
+        emb *= target_dropout
+
+    # initial decoder state
+    init_state = get_layer_constr('ff')(tparams, ctx_mean, options,
+                                prefix=factored_layer_name('ff_state',factor), activ='tanh')
+
+    #surface form decoder
+    final_proj = get_layer_constr('gru_2inputs')(tparams, emb, generator_input, options,
+                                        prefix='rnngenerator',
+                                        mask=y_mask,
+                                        one_step=False,
+                                        init_state=init_state,
+                                        emb_dropout=emb_dropout_d_l[factor],
+                                        emb_factor_dropout=emb_dropout_d_factors,
+                                        rec_dropout=rec_dropout_d_l[factor],
+                                        profile=profile)
+
+    proj_h=final_proj[0]
+    if options['use_dropout']:
+        proj_h *= shared_dropout_layer((n_samples, options['dim_per_factor_tl'][factor]), use_noise, trng, retain_probability_hidden)
+        emb *= shared_dropout_layer((n_samples,options['dim_word_per_factor_tl'][factor]), use_noise, trng, retain_probability_emb)
+        generator_input *= shared_dropout_layer((n_samples, sum(options['dim_word_per_factor_tl'][:-1])), use_noise, trng, retain_probability_hidden)
+
+    # compute word probabilities
+    logit_lstm = get_layer_constr('ff')(tparams, proj_h, options,
+                                    prefix=factored_layer_name('ff_logit_lstm',factor), activ='linear')
+    logit_prev = get_layer_constr('ff')(tparams, emb, options,
+                                    prefix=factored_layer_name('ff_logit_prev',factor), activ='linear')
+    logit_ctx = get_layer_constr('ff')(tparams, generator_input, options,
+                                   prefix=factored_layer_name('ff_logit_ctx',factor), activ='linear')
+    logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx)
+
+    if options['use_dropout']:
+        logit *= shared_dropout_layer((n_samples, options['dim_word_per_factor_tl'][factor]), use_noise, trng, retain_probability_hidden)
+
+    logit = get_layer_constr('ff')(tparams, logit, options,
+                               prefix=factored_layer_name('ff_logit',factor), activ='linear')
+    #From Theano help: The softmax function will, when applied to a matrix, compute the softmax values row-wise.
+    logit_shp = logit.shape
+    #logit_shp: n_timesteps x n_samples x n_words
+    #probs: n_timesteps*n_samples x n_words
+    generator_probs = tensor.nnet.softmax(logit.reshape([logit_shp[0]*logit_shp[1],
+                                               logit_shp[2]]))
+
+    #compute cost of last factor; compute final cost
+    #shape of y: n_timesteps x n_samples
+
     y_flat = y.flatten()
     y_flat_idx = tensor.arange(y_flat.shape[0]) * options['n_words'][factor] + y_flat
-    cost = -tensor.log(probs.flatten()[y_flat_idx])
+    cost = -tensor.log(generator_probs.flatten()[y_flat_idx])
     cost = cost.reshape([y.shape[0], y.shape[1]])
     cost = (cost * y_mask).sum(0)
 
@@ -394,22 +468,26 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
         retain_probability_target = 1-options['dropout_target']
         rec_dropout = theano.shared(numpy.array([retain_probability_hidden]*2, dtype='float32'))
         rec_dropout_r = theano.shared(numpy.array([retain_probability_hidden]*2, dtype='float32'))
-        rec_dropout_d_l = [theano.shared(numpy.array([retain_probability_hidden]*5, dtype='float32')) for i in xrange(options['factors_tl']-1)]
+        rec_dropout_d_l = [theano.shared(numpy.array([retain_probability_hidden]*5, dtype='float32')) for i in xrange(options['factors_tl'])]
         emb_dropout = theano.shared(numpy.array([retain_probability_emb]*2, dtype='float32'))
         emb_dropout_r = theano.shared(numpy.array([retain_probability_emb]*2, dtype='float32'))
-        emb_dropout_d_l = [ theano.shared(numpy.array([retain_probability_emb]*2, dtype='float32')) for i in xrange(options['factors_tl']-1) ]
+        emb_dropout_d_l = [ theano.shared(numpy.array([retain_probability_emb]*2, dtype='float32')) for i in xrange(options['factors_tl']) ]
+        emb_dropout_d_factors=theano.shared(numpy.array([retain_probability_emb]*2, dtype='float32'))
+
         ctx_dropout_d_l = [ theano.shared(numpy.array([retain_probability_hidden]*4, dtype='float32')) for i in xrange(options['factors_tl']-1) ]
+        emb_dropout_d_factors=shared_dropout_layer((2, n_samples, sum(options['dim_word_per_factor_tl'][:-1])), use_noise, trng, retain_probability_emb)
         source_dropout = theano.shared(numpy.float32(retain_probability_source))
-        target_dropout_l = [theano.shared(numpy.float32(retain_probability_target)) for i in xrange(options['factors_tl']-1) ]
+        target_dropout_l = [theano.shared(numpy.float32(retain_probability_target)) for i in xrange(options['factors_tl']) ]
         emb *= source_dropout
         embr *= source_dropout
     else:
         rec_dropout = theano.shared(numpy.array([1.]*2, dtype='float32'))
         rec_dropout_r = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        rec_dropout_d_l = [theano.shared(numpy.array([1.]*5, dtype='float32')) for i in xrange(options['factors_tl']-1)]
+        rec_dropout_d_l = [theano.shared(numpy.array([1.]*5, dtype='float32')) for i in xrange(options['factors_tl'])]
         emb_dropout = theano.shared(numpy.array([1.]*2, dtype='float32'))
         emb_dropout_r = theano.shared(numpy.array([1.]*2, dtype='float32'))
-        emb_dropout_d_l = [theano.shared(numpy.array([1.]*2, dtype='float32')) for i in xrange(options['factors_tl']-1)]
+        emb_dropout_d_l = [theano.shared(numpy.array([1.]*2, dtype='float32')) for i in xrange(options['factors_tl'])]
+        emb_dropout_d_factors=theano.shared(numpy.array([1.]*2, dtype='float32'))
         ctx_dropout_d_l = [theano.shared(numpy.array([1.]*4, dtype='float32')) for i in xrange(options['factors_tl']-1)]
 
     # encoder
@@ -507,10 +585,21 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
         next_probs_l.append(next_probs)
 
 
+    init_state = get_layer_constr('ff')(tparams, ctx_mean, options,
+                                prefix=factored_layer_name('ff_state',options['factors_tl']-1), activ='tanh')
+    init_state_l.append(init_state)
+
     print >>sys.stderr, 'Building f_init'
     outs = init_state_l + [ctx]
     f_init = theano.function([x], outs, name='f_init', profile=profile)
     print >>sys.stderr, 'Done'
+
+    # x: 1 x 1
+    y = tensor.vector(factored_layer_name('y_sampler',options['factors_tl']-1), dtype='int64')
+    init_state = tensor.matrix(factored_layer_name('init_state',options['factors_tl']-1), dtype='float32')
+    y_l.append(y)
+    init_state_inputs_l.append(init_state)
+
 
     #surface form generator
     generator_input_l=[]
@@ -520,11 +609,52 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
         generator_input_l.append(emb)
     generator_input=tensor.concatenate(generator_input_l,axis=-1)
 
-    #FF + softmax
-    generator_output=get_layer_constr('ff')(tparams, generator_input, options,
-                               prefix='ff_generator', activ='tanh')
+    factor=options['factors_tl']-1
+
+    # if it's the first word, emb should be all zero and it is indicated by -1
+    emb = tensor.switch(y[:, None] < 0,
+                        tensor.alloc(0., 1, tparams[embedding_name(factor)+'_dec'].shape[1]),
+                        tparams[embedding_name(factor)+'_dec'][y])
+
+    if options['use_dropout']:
+        emb *= target_dropout_l[factor]
+
+    # apply one step of surface form decoder
+    final_proj = get_layer_constr('gru_2inputs')(tparams, emb, generator_input, options,
+                                        prefix='rnngenerator',
+                                        mask=None,
+                                        one_step=True,
+                                        init_state=init_state,
+                                        emb_dropout=emb_dropout_d_l[factor],
+                                        emb_factor_dropout=emb_dropout_d_factors,
+                                        rec_dropout=rec_dropout_d_l[factor],
+                                        profile=profile)
+
+    next_state = final_proj[0]
+    next_state_l.append(next_state)
+
+    if options['use_dropout']:
+        next_state_up = next_state * retain_probability_hidden
+        emb *= retain_probability_emb
+    else:
+        next_state_up = next_state
+
+    logit_lstm = get_layer_constr('ff')(tparams, next_state_up, options,
+                                    prefix=factored_layer_name('ff_logit_lstm',factor), activ='linear')
+    logit_prev = get_layer_constr('ff')(tparams, emb, options,
+                                    prefix=factored_layer_name('ff_logit_prev',factor), activ='linear')
+    logit_ctx = get_layer_constr('ff')(tparams, generator_input, options,
+                                   prefix=factored_layer_name('ff_logit_ctx',factor), activ='linear')
+    logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx)
+
+    if options['use_dropout']:
+        logit *= retain_probability_hidden
+
+    logit = get_layer_constr('ff')(tparams, logit, options,
+                          prefix=factored_layer_name('ff_logit',factor), activ='linear')
+
     #generator output has 1 dimenstion here, but code works anyway
-    generator_probs=probs = tensor.nnet.softmax(generator_output)
+    generator_probs=probs = tensor.nnet.softmax(logit)
 
     # sample from softmax distribution to get the sample
     next_sample = trng.multinomial(pvals=generator_probs).argmax(1)
@@ -534,6 +664,9 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     print >>sys.stderr, 'Building f_next'
     inps = y_l + [ctx] + init_state_inputs_l
     outs = [next_probs, next_sample] + next_state_l + next_probs_l
+    #TODO: y_l has as many items as factors
+    #init_state_inputs_l as as many items as factors
+    #next_state_l has as many items as factors
 
     if return_alignment:
         outs.extend(dec_alphas_l)
@@ -585,7 +718,7 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
         #next_state is a list with one state per factor
         next_state_l[i] = ret[:-1]
         ctx0[i] = ret[-1]
-    next_w_l = [ -1 * numpy.ones((1,)).astype('int64') for factor in xrange(factors_tl-1) ]  # bos indicator
+    next_w_l = [ -1 * numpy.ones((1,)).astype('int64') for factor in xrange(factors_tl) ]  # bos indicator
 
     # x is a sequence of word ids followed by 0, eos id
     for ii in xrange(maxlen):
@@ -595,10 +728,10 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
             #outs = [next_probs, next_sample] + next_state_l
             ret = f_next[i](*inps)
             # dimension of dec_alpha (k-beam-size, number-of-input-hidden-units)
-            next_p[i], next_w_tmp, next_state_l[i], next_p_factors[i] = ret[0], ret[1], ret[2:2+factors_tl-1],ret[2+factors_tl-1:2+2*(factors_tl-1)]
+            next_p[i], next_w_tmp, next_state_l[i], next_p_factors[i] = ret[0], ret[1], ret[2:2+factors_tl],ret[2+factors_tl:2+factors_tl+factors_tl-1]
             if return_alignment:
                 #we only consider alphas of first factor
-                dec_alphas[i] = ret[2+2*(factors_tl-1)]
+                dec_alphas[i] = ret[2+factors_tl+factors_tl-1]
             if suppress_unk:
                 next_p[i][:,1] = -numpy.inf
         if stochastic:
@@ -655,7 +788,7 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
                 new_element=[]
                 for i in xrange(num_models):
                     factorlist=[]
-                    for factor in xrange(factors_tl-1):
+                    for factor in xrange(factors_tl):
                         factorlist.append(copy.copy(next_state_l[i][factor][ti]))
                     new_element.append(factorlist)
                 new_hyp_states.append(new_element)
@@ -730,6 +863,7 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
                     max_idx=numpy.argmax(numpy.array(analysis_probs))
                     for factor in xrange(factors_tl-1):
                         next_w_l[factor].append(analyses[max_idx][factor])
+                next_w_l[factors_tl-1].append(w[-1])
             for i in xrange(len(next_w_l)):
                 next_w_l[i]=numpy.array(next_w_l[i])
 

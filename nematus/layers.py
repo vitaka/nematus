@@ -19,6 +19,7 @@ from alignment_util import *
 # layers: 'name': ('parameter initializer', 'feedforward')
 layers = {'ff': ('param_init_fflayer', 'fflayer'),
           'gru': ('param_init_gru', 'gru_layer'),
+          'gru_2inputs':('param_init_gru_2inputs', 'gru_layer_2inputs'),
           'gru_cond': ('param_init_gru_cond', 'gru_cond_layer'),
           }
 
@@ -90,6 +91,44 @@ def param_init_gru(options, params, prefix='gru', nin=None, dim=None):
     # embedding to hidden state proposal weights, biases
     Wx = norm_weight(nin, dim)
     params[pp(prefix, 'Wx')] = Wx
+    params[pp(prefix, 'bx')] = numpy.zeros((dim,)).astype('float32')
+
+    # recurrent transformation weights for hidden state proposal
+    Ux = ortho_weight(dim)
+    params[pp(prefix, 'Ux')] = Ux
+
+    return params
+
+# GRU layer
+def param_init_gru_2inputs(options, params, prefix='gru', nin=None, ninc=None, dim=None):
+    if nin is None:
+        nin = options['dim_proj']
+    if ninc is None:
+        ninc = options['dim_proj']
+    if dim is None:
+        dim = options['dim_proj']
+
+    # embedding to gates transformation weights, biases
+    W = numpy.concatenate([norm_weight(nin, dim),
+                           norm_weight(nin, dim)], axis=1)
+    C = numpy.concatenate([norm_weight(ninc, dim),
+                           norm_weight(ninc, dim)], axis=1)
+    params[pp(prefix, 'W')] = W
+    params[pp(prefix, 'C')] = C
+    params[pp(prefix, 'b')] = numpy.zeros((2 * dim,)).astype('float32')
+    # embedding of factors to gates transformation weights
+
+
+    # recurrent transformation weights for gates
+    U = numpy.concatenate([ortho_weight(dim),
+                           ortho_weight(dim)], axis=1)
+    params[pp(prefix, 'U')] = U
+
+    # embedding to hidden state proposal weights, biases
+    Wx = norm_weight(nin, dim)
+    Cx = norm_weight(ninc, dim)
+    params[pp(prefix, 'Wx')] = Wx
+    params[pp(prefix, 'Cx')] = Cx
     params[pp(prefix, 'bx')] = numpy.zeros((dim,)).astype('float32')
 
     # recurrent transformation weights for hidden state proposal
@@ -173,6 +212,93 @@ def gru_layer(tparams, state_below, options, prefix='gru', mask=None,
     rval = [rval]
     return rval
 
+
+#state below = embeddings of surface forms (shifted)
+#state_below_factors = embeddings of factors printed by the network
+def gru_layer_2inputs(tparams, state_below,state_below_factors, options, prefix='gru', mask=None,
+             one_step=False,
+              init_state=None,
+              emb_dropout=None,
+              emb_factor_dropout=None,
+              rec_dropout=None,
+              profile=False,
+              **kwargs):
+
+    #state_below: nsteps x nsample x nin (dim of embeddings) or nsteps x nin if only one sampe (decoding)
+    nsteps = state_below.shape[0]
+    if state_below.ndim == 3:
+        n_samples = state_below.shape[1]
+    else:
+        n_samples = 1
+
+    dim = tparams[pp(prefix, 'Ux')].shape[1]
+
+    if mask is None:
+        mask = tensor.alloc(1., state_below.shape[0], 1)
+
+    # utility function to slice a tensor
+    def _slice(_x, n, dim):
+        if _x.ndim == 3:
+            return _x[:, :, n*dim:(n+1)*dim]
+        return _x[:, n*dim:(n+1)*dim]
+
+    # state_below is the input word embeddings
+    # input to the gates, concatenated
+    state_below_ = tensor.dot(state_below*emb_dropout[0], tparams[pp(prefix, 'W')]) + \
+        tensor.dot(state_below_factors*emb_factor_dropout[0], tparams[pp(prefix, 'C')])  + \
+        tparams[pp(prefix, 'b')]
+    # input to compute the hidden state proposal
+    state_belowx = tensor.dot(state_below*emb_dropout[1], tparams[pp(prefix, 'Wx')]) + \
+        tensor.dot(state_below_factors*emb_factor_dropout[1], tparams[pp(prefix, 'Cx')])  + \
+        tparams[pp(prefix, 'bx')]
+
+    # step function to be used by scan
+    # arguments    | sequences |outputs-info| non-seqs
+    def _step_slice(m_, x_, xx_, h_, U, Ux, rec_dropout):
+
+        preact = tensor.dot(h_*rec_dropout[0], U)
+        preact += x_
+
+        # reset and update gates
+        r = tensor.nnet.sigmoid(_slice(preact, 0, dim))
+        u = tensor.nnet.sigmoid(_slice(preact, 1, dim))
+
+        # compute the hidden state proposal
+        preactx = tensor.dot(h_*rec_dropout[1], Ux)
+        preactx = preactx * r
+        preactx = preactx + xx_
+
+        # hidden state proposal
+        h = tensor.tanh(preactx)
+
+        # leaky integrate and obtain next hidden state
+        h = u * h_ + (1. - u) * h
+        h = m_[:, None] * h + (1. - m_)[:, None] * h_
+
+        return h
+
+    # prepare scan arguments
+    seqs = [mask, state_below_, state_belowx]
+    init_states = [init_state]
+    _step = _step_slice
+    shared_vars = [tparams[pp(prefix, 'U')],
+                   tparams[pp(prefix, 'Ux')],
+                   rec_dropout]
+
+    if one_step:
+        rval = _step(*(seqs + [init_state] +
+                       shared_vars))
+    else:
+        rval, updates = theano.scan(_step,
+                                sequences=seqs,
+                                outputs_info=init_states,
+                                non_sequences=shared_vars,
+                                name=pp(prefix, '_layers'),
+                                n_steps=nsteps,
+                                profile=profile,
+                                strict=True)
+    rval = [rval]
+    return rval
 
 # Conditional GRU layer with Attention
 def param_init_gru_cond(options, params, prefix='gru_cond',
@@ -370,6 +496,3 @@ def gru_cond_layer(tparams, state_below, options, prefix='gru',
                                     profile=profile,
                                     strict=True)
     return rval
-
-
-
