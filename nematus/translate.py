@@ -100,7 +100,7 @@ def print_matrices(mm, file):
 
 
 def main(models, source_file, saveto, save_alignment=None, k=5,
-         normalize=False, n_process=5, chr_level=False, verbose=False, nbest=False, suppress_unk=False, a_json=False, print_word_probabilities=False):
+         normalize=False, n_process=5, chr_level=False, verbose=False, nbest=False, suppress_unk=False, a_json=False, print_word_probabilities=False,save_alphas=None):
     # load model model_options
     options = []
     for model in models:
@@ -164,7 +164,7 @@ def main(models, source_file, saveto, save_alignment=None, k=5,
     for midx in xrange(n_process):
         processes[midx] = Process(
             target=translate_model,
-            args=(queue, rqueue, midx, models, options, k, normalize, verbose, nbest, save_alignment is not None, suppress_unk))
+            args=(queue, rqueue, midx, models, options, k, normalize, verbose, nbest, save_alignment is not None, save_alphas is not None, , suppress_unk))
         processes[midx].start()
 
     # utility function
@@ -221,7 +221,7 @@ def main(models, source_file, saveto, save_alignment=None, k=5,
 
     for i, trans in enumerate(_retrieve_jobs(n_samples)):
         if nbest:
-            samples, scores, word_probs, alignment = trans
+            samples, scores, word_probs, alignment, alphas = trans
             order = numpy.argsort(scores)
             for j in order:
                 if print_word_probabilities:
@@ -239,7 +239,7 @@ def main(models, source_file, saveto, save_alignment=None, k=5,
                                         i, _seqs2words(samples[j]), scores[j], ' '.join(source_sentences[i]) , len(source_sentences[i])+1, len(samples[j])))
                     print_matrix(alignment[j], save_alignment)
         else:
-            samples, scores, word_probs, alignment = trans
+            samples, scores, word_probs, alignment, alphas = trans
 
             saveto.write(_seqs2words(samples) + "\n")
             if print_word_probabilities:
@@ -253,6 +253,10 @@ def main(models, source_file, saveto, save_alignment=None, k=5,
                 save_alignment.write('{0} ||| {1} ||| {2} ||| {3} ||| {4} {5}\n'.format(
                                       i, _seqs2words(trans[0]), 0, ' '.join(source_sentences[i]) , len(source_sentences[i])+1, len(trans[0])))
                 print_matrix(trans[3], save_alignment)
+            if save_alphas is not None:
+                save_alphas.write(str(alphas))
+                save_alphas.write("\n")
+
 
     sys.stderr.write('Done\n')
 
@@ -277,6 +281,9 @@ if __name__ == "__main__":
     parser.add_argument('--output_alignment', '-a', type=argparse.FileType('w'),
                         default=None, metavar='PATH',
                         help="Output file for alignment weights (default: standard output)")
+    parser.add_argument('--output_alphas', '-f', type=argparse.FileType('w'),
+                        default=None, metavar='PATH',
+                        help="Output file for alignment weights (default: standard output)")
     parser.add_argument('--json_alignment', action="store_true",
                         help="Output alignment in json format")
     parser.add_argument('--n-best', action="store_true",
@@ -289,4 +296,4 @@ if __name__ == "__main__":
     main(args.models, args.input,
          args.output, k=args.k, normalize=args.n, n_process=args.p,
          chr_level=args.c, verbose=args.v, nbest=args.n_best, suppress_unk=args.suppress_unk,
-         print_word_probabilities = args.print_word_probabilities, save_alignment=args.output_alignment, a_json=args.json_alignment)
+         print_word_probabilities = args.print_word_probabilities, save_alignment=args.output_alignment, a_json=args.json_alignment, save_alphas=args.output_alphas)

@@ -495,8 +495,9 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
 
 # generate sample, either with stochastic sampling or beam search. Note that,
 # this function iteratively calls f_init and f_next functions.
+#TODO: return alphas
 def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
-               stochastic=True, argmax=False, return_alignment=False, suppress_unk=False):
+               stochastic=True, argmax=False, return_alignment=False, return_alphas=False, suppress_unk=False):
 
     # k is the beam size we have
     if k > 1:

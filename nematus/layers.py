@@ -716,9 +716,8 @@ def gru_cond_layer_multiple_encoders(tparams, state_below, options, prefix='gru'
         #and this one? It is the mask
         h2 = m_[:, None] * h2 + (1. - m_)[:, None] * h1
 
-        #TODO: currently we only return alphas for the first factor. Could we return an average?
 
-        return h2, ctx_, alpha_l[0].T  # pstate_, preact, preactx, r, u
+        return h2, ctx_, [alpha_l[i].T for in in xrange(len(pctx_l)) ]  # pstate_, preact, preactx, r, u
 
     seqs = [mask, state_below_, state_belowx]
     #seqs = [mask, state_below_, state_belowx, state_belowc]
