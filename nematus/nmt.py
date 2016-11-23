@@ -508,6 +508,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
     sample_score = []
     sample_word_probs = []
     alignment = []
+    final_alphas = []
     if stochastic:
         sample_score = 0
 
@@ -520,6 +521,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
     hyp_states = []
     if return_alignment:
         hyp_alignment = [[] for _ in xrange(live_k)]
+    if return_alphas:
+        hyp_alphas = [[] for _ in xrange(live_k)]
 
     # for ensemble decoding, we keep track of states and probability distribution
     # for each model in the ensemble
@@ -528,6 +531,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
     ctx0 = [None]*num_models
     next_p = [None]*num_models
     dec_alphas = [None]*num_models
+    dec_all_alphas = [None]*num_models
     # get initial state of decoder rnn and encoder context
     for i in xrange(num_models):
         ret = f_init[i](x)
@@ -546,6 +550,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             if return_alignment:
                 #these are the alphas for the first factor
                 dec_alphas[i] = ret[3]
+            if return_alphas:
+                dec_all_alphas[i] = ret[3:]
 
             if suppress_unk:
                 next_p[i][:,1] = -numpy.inf
@@ -565,10 +571,16 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             probs_flat = probs.flatten()
             ranks_flat = cand_flat.argpartition(k-dead_k-1)[:(k-dead_k)]
 
-            #averaging the attention weights accross models
+            #averaging the attention weights across models
             #TODO: we only consider the first factor to compute alignment (value returned by f_next) Maybe an average would be more convenient?
             if return_alignment:
                 mean_alignment = sum([dec_alphas[i] for i in xrange(num_models) ])/num_models
+
+            if return_alphas:
+                num_factors=len(dec_all_alphas[0])
+                alphas_for_this_word=[]
+                for factor in xrange(num_factors):
+                    alphas_for_this_word.append(sum([ dec_all_alphas[i][factor] for i in xrange(num_models) ])/num_models)
 
             voc_size = next_p[0].shape[1]
             # index of each k-best hypothesis
@@ -586,6 +598,9 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 # at each time step we append the attention weights corresponding to the current target word
                 new_hyp_alignment = [[] for _ in xrange(k-dead_k)]
 
+            if return_alphas:
+                new_hyp_alphas = [[] for _ in xrange(k-dead_k)]
+
             # ti -> index of k-best hypothesis
             for idx, [ti, wi] in enumerate(zip(trans_indices, word_indices)):
                 new_hyp_samples.append(hyp_samples[ti]+[wi])
@@ -597,6 +612,11 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                     new_hyp_alignment[idx] = copy.copy(hyp_alignment[ti])
                     # extend the history with current attention weights
                     new_hyp_alignment[idx].append(mean_alignment[ti])
+                if return_alphas:
+                    # get history of attention weights for the current hypothesis TODO: ??
+                    new_hyp_alphas[idx] = copy.copy(hyp_alphas[ti])
+                    # extend the history with current attention weights TODO: ??
+                    new_hyp_alphas[idx].append([alphas_for_this_word[i][ti] for i in xrange(len(alphas_for_this_word)) ])
 
 
             # check the finished samples
@@ -607,6 +627,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             word_probs = []
             if return_alignment:
                 hyp_alignment = []
+            if return_alphas:
+                hyp_alphas = []
 
             # sample and sample_score hold the k-best translations and their scores
             for idx in xrange(len(new_hyp_samples)):
@@ -616,6 +638,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                     sample_word_probs.append(new_word_probs[idx])
                     if return_alignment:
                         alignment.append(new_hyp_alignment[idx])
+                    if return_alphas:
+                        final_alphas.append(new_hyp_alphas[idx])
                     dead_k += 1
                 else:
                     new_live_k += 1
@@ -625,6 +649,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                     word_probs.append(new_word_probs[idx])
                     if return_alignment:
                         hyp_alignment.append(new_hyp_alignment[idx])
+                    if return_alphas:
+                        hyp_alphas.append(new_hyp_alphas[idx])
             hyp_scores = numpy.array(hyp_scores)
 
             live_k = new_live_k
@@ -646,11 +672,15 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 sample_word_probs.append(word_probs[idx])
                 if return_alignment:
                     alignment.append(hyp_alignment[idx])
+                if return_alphas:
+                    final_alphas.append(hyp_alphas[idx])
 
     if not return_alignment:
         alignment = [None for i in range(len(sample))]
+    if not return_alphas:
+        final_alphas=[None for i in range(len(sample))]
 
-    return sample, sample_score, sample_word_probs, alignment
+    return sample, sample_score, sample_word_probs, alignment, final_alphas
 
 
 # calculate the log probablities on a given corpus using translation model

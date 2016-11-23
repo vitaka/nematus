@@ -289,7 +289,7 @@ def param_init_gru_cond_multiple_encoders(options, params, prefix='gru_cond',
     Wcx = norm_weight(dimctx, dim)
     params[pp(prefix, 'Wcx')] = Wcx
 
-    #IMPORTANT: We define the same size for n and n' (see paper by Cho). No, it seems that in the default implementation
+    #IMPORTANT: In the paper by Cho, the same size for n and n' is used. Here, it seems that in the default implementation
     #in this piece of software n' = 2n
 
     #different for each encoder
