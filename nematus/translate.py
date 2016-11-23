@@ -12,7 +12,7 @@ from multiprocessing import Process, Queue
 from util import load_dict
 
 
-def translate_model(queue, rqueue, pid, models, options, k, normalize, verbose, nbest, return_alignment, suppress_unk):
+def translate_model(queue, rqueue, pid, models, options, k, normalize, verbose, nbest, return_alignment, return_alphas, suppress_unk):
 
     from theano_util import (load_params, init_theano_params)
     from nmt import (build_sampler, gen_sample, init_params)
@@ -45,7 +45,7 @@ def translate_model(queue, rqueue, pid, models, options, k, normalize, verbose, 
         sample, score, word_probs, alignment = gen_sample(fs_init, fs_next,
                                    numpy.array(seq).T.reshape([len(seq[0]), len(seq), 1]),
                                    trng=trng, k=k, maxlen=200,
-                                   stochastic=False, argmax=False, return_alignment=return_alignment, suppress_unk=suppress_unk)
+                                   stochastic=False, argmax=False, return_alignment=return_alignment, return_alphas=return_alphas, suppress_unk=suppress_unk)
 
         # normalize scores according to sequence lengths
         if normalize:
