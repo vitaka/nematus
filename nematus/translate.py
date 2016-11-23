@@ -42,7 +42,7 @@ def translate_model(queue, rqueue, pid, models, options, k, normalize, verbose, 
 
     def _translate(seq):
         # sample given an input sequence and obtain scores
-        sample, score, word_probs, alignment = gen_sample(fs_init, fs_next,
+        sample, score, word_probs, alignment, alphas = gen_sample(fs_init, fs_next,
                                    numpy.array(seq).T.reshape([len(seq[0]), len(seq), 1]),
                                    trng=trng, k=k, maxlen=200,
                                    stochastic=False, argmax=False, return_alignment=return_alignment, return_alphas=return_alphas, suppress_unk=suppress_unk)
@@ -52,10 +52,10 @@ def translate_model(queue, rqueue, pid, models, options, k, normalize, verbose, 
             lengths = numpy.array([len(s) for s in sample])
             score = score / lengths
         if nbest:
-            return sample, score, word_probs, alignment
+            return sample, score, word_probs, alignment, alphas
         else:
             sidx = numpy.argmin(score)
-            return sample[sidx], score[sidx], word_probs[sidx], alignment[sidx]
+            return sample[sidx], score[sidx], word_probs[sidx], alignment[sidx], alphas[sidx]
 
     while True:
         req = queue.get()
