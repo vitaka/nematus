@@ -164,7 +164,7 @@ def main(models, source_file, saveto, save_alignment=None, k=5,
     for midx in xrange(n_process):
         processes[midx] = Process(
             target=translate_model,
-            args=(queue, rqueue, midx, models, options, k, normalize, verbose, nbest, save_alignment is not None, save_alphas is not None, , suppress_unk))
+            args=(queue, rqueue, midx, models, options, k, normalize, verbose, nbest, save_alignment is not None, save_alphas is not None, suppress_unk))
         processes[midx].start()
 
     # utility function
