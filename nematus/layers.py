@@ -717,7 +717,8 @@ def gru_cond_layer_multiple_encoders(tparams, state_below, options, prefix='gru'
         h2 = m_[:, None] * h2 + (1. - m_)[:, None] * h1
 
 
-        return h2, ctx_, [alpha_l[i].T for i in xrange(len(pctx_l)) ]  # pstate_, preact, preactx, r, u
+        return tuple([h2, ctx_ ] + [alpha_l[i].T for i in xrange(len(pctx_l)) ])  # pstate_, preact, preactx, r, u
+
 
     seqs = [mask, state_below_, state_belowx]
     #seqs = [mask, state_below_, state_belowx, state_belowc]
