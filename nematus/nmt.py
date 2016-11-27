@@ -108,7 +108,7 @@ def init_params(options):
                                               prefix='decoder',
                                               nin=options['dim_word'],
                                               dim=options['dim'],
-                                              2*sum(options['dim_per_factor']))
+                                              dimctx=2*sum(options['dim_per_factor']))
                                               #dimctx=ctxdim)
     # readout
     params = get_layer_param('ff')(options, params, prefix='ff_logit_lstm',
