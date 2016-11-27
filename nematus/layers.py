@@ -512,6 +512,7 @@ def gru_cond_layer_multiple_encoders(tparams, state_below, options, prefix='gru'
         mask = tensor.alloc(1., state_below.shape[0], 1)
 
     #do we need different Wcx??? No
+    indim=tparams[pp(prefix, 'Wcx')].shape[0]
     dim = tparams[pp(prefix, 'Wcx')].shape[1]
 
     # initial/previous state
@@ -751,7 +752,7 @@ def gru_cond_layer_multiple_encoders(tparams, state_below, options, prefix='gru'
                                     sequences=seqs,
                                     outputs_info=[init_state,
                                                   tensor.alloc(0., n_samples,
-                                                               dim*2),#prev ctx_ context.shape[2] = length of context dim
+                                                               indim),#prev ctx_ context.shape[2] = length of context dim
                                                  tensor.alloc(0., n_samples,
                                                                context_l[0].shape[0])], #prev alpha. context.shape[0] = maxlen
                                     non_sequences=  pctx_l + context_l + [rec_dropout] + ctx_dropout_l  + [ctx_dropout_j]+shared_vars,
