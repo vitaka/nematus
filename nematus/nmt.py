@@ -108,7 +108,8 @@ def init_params(options):
                                               prefix='decoder',
                                               nin=options['dim_word'],
                                               dim=options['dim'],
-                                              dimctx=ctxdim)
+                                              2*sum(options['dim_per_factor']))
+                                              #dimctx=ctxdim)
     # readout
     params = get_layer_param('ff')(options, params, prefix='ff_logit_lstm',
                                 nin=options['dim'], nout=options['dim_word'],
@@ -173,7 +174,7 @@ def build_model(tparams, options):
         ctx_dropout_d_l =[]
         for factor in xrange(options['factors']):
             ctx_dropout_d_l.append(shared_dropout_layer((2, n_samples, 2*options['dim_per_factor'][factor]), use_noise, trng, retain_probability_hidden))
-        ctx_dropout_d_j=shared_dropout_layer((2, n_samples, 2*options['dim']), use_noise, trng, retain_probability_hidden)
+        ctx_dropout_d_j=shared_dropout_layer((2, n_samples, 2*sum(options['dim_per_factor'])), use_noise, trng, retain_probability_hidden)
         source_dropout_l=[]
         for factor in xrange(options['factors']):
             source_dropout_l.append(shared_dropout_layer((n_timesteps, n_samples, 1), use_noise, trng, retain_probability_source))
@@ -244,7 +245,7 @@ def build_model(tparams, options):
 
     #This droput is OK
     if options['use_dropout']:
-        ctx_mean *= shared_dropout_layer((n_samples, 2*options['dim']), use_noise, trng, retain_probability_hidden)
+        ctx_mean *= shared_dropout_layer((n_samples, 2*sum(options['dim_per_factor'])), use_noise, trng, retain_probability_hidden)
 
     # initial decoder state
     init_state = get_layer_constr('ff')(tparams, ctx_mean, options,
