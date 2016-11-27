@@ -102,7 +102,7 @@ def init_params(options):
 
     # init_state, init_cell
     params = get_layer_param('ff')(options, params, prefix='ff_state',
-                                nin=ctxdim, nout=options['dim'])
+                                nin=2*sum(options['dim_per_factor']), nout=options['dim'])
     # decoder
     params = get_layer_param(options['decoder'])(options, params,
                                               prefix='decoder',
