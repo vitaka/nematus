@@ -118,7 +118,7 @@ def init_params(options):
                                 nin=options['dim_word'],
                                 nout=options['dim_word'], ortho=False)
     params = get_layer_param('ff')(options, params, prefix='ff_logit_ctx',
-                                nin=ctxdim, nout=options['dim_word'],
+                                nin=2*sum(options['dim_per_factor']), nout=options['dim_word'],
                                 ortho=False)
     params = get_layer_param('ff')(options, params, prefix='ff_logit',
                                 nin=options['dim_word'],
@@ -287,7 +287,7 @@ def build_model(tparams, options):
     if options['use_dropout']:
         proj_h *= shared_dropout_layer((n_samples, options['dim']), use_noise, trng, retain_probability_hidden)
         emb *= shared_dropout_layer((n_samples, options['dim_word']), use_noise, trng, retain_probability_emb)
-        ctxs *= shared_dropout_layer((n_samples, 2*options['dim']), use_noise, trng, retain_probability_hidden)
+        ctxs *= shared_dropout_layer((n_samples, 2*sum(options['dim_per_factor'])), use_noise, trng, retain_probability_hidden)
 
     # weights (alignment matrix) #####LIUCAN: this is where the attention vector is.
     # WARNING: this is now a list with one element per input factor
