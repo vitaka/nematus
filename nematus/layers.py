@@ -492,7 +492,7 @@ def gru_cond_layer_multiple_encoders(tparams, state_below, options, prefix='gru'
                    init_memory=None, init_state=None,
                    context_mask=None, emb_dropout=None,
                    rec_dropout=None, ctx_dropout_l=None,ctx_dropout_j=None,
-                   profile=False,
+                   profile=False,useAlphaFirstFactorForAll=False,
                    **kwargs):
 
     assert context_l, 'Context must be provided'
@@ -684,7 +684,10 @@ def gru_cond_layer_multiple_encoders(tparams, state_below, options, prefix='gru'
             alpha_l.append(alpha)
 
             #c_i in paper: cc_ = h_j for all j?
-            ctx_l.append ( (cc_l[factor] * alpha[:, :, None]).sum(0) ) # current context
+            if useAlphaFirstFactorForAll:
+                ctx_l.append ( (cc_l[factor] * alpha_l[0][:, :, None]).sum(0) ) # current context
+            else:
+                ctx_l.append ( (cc_l[factor] * alpha[:, :, None]).sum(0) ) # current context
 
         #CONCATENATE ALL THE ctx_l to build ctx_
         #Each member of ctx_l has dimensionality #samples x #2 * dim (a different dim for each of them)

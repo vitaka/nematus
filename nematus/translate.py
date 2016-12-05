@@ -12,7 +12,7 @@ from multiprocessing import Process, Queue
 from util import load_dict
 
 
-def translate_model(queue, rqueue, pid, models, options, k, normalize, verbose, nbest, return_alignment, return_alphas, suppress_unk):
+def translate_model(queue, rqueue, pid, models, options, k, normalize, verbose, nbest, return_alignment, return_alphas, suppress_unk,useAlphaFirstFactorForAll=False):
 
     from theano_util import (load_params, init_theano_params)
     from nmt import (build_sampler, gen_sample, init_params)
@@ -35,7 +35,7 @@ def translate_model(queue, rqueue, pid, models, options, k, normalize, verbose, 
         tparams = init_theano_params(params)
 
         # word index
-        f_init, f_next = build_sampler(tparams, option, use_noise, trng, return_alignment=return_alignment)
+        f_init, f_next = build_sampler(tparams, option, use_noise, trng, return_alignment=return_alignment,useAlphaFirstFactorForAll=useAlphaFirstFactorForAll)
 
         fs_init.append(f_init)
         fs_next.append(f_next)
@@ -100,7 +100,7 @@ def print_matrices(mm, file):
 
 
 def main(models, source_file, saveto, save_alignment=None, k=5,
-         normalize=False, n_process=5, chr_level=False, verbose=False, nbest=False, suppress_unk=False, a_json=False, print_word_probabilities=False,save_alphas=None):
+         normalize=False, n_process=5, chr_level=False, verbose=False, nbest=False, suppress_unk=False, a_json=False, print_word_probabilities=False,save_alphas=None,useAlphaFirstFactorForAll=False):
     # load model model_options
     options = []
     for model in models:
@@ -164,7 +164,7 @@ def main(models, source_file, saveto, save_alignment=None, k=5,
     for midx in xrange(n_process):
         processes[midx] = Process(
             target=translate_model,
-            args=(queue, rqueue, midx, models, options, k, normalize, verbose, nbest, save_alignment is not None, save_alphas is not None, suppress_unk))
+            args=(queue, rqueue, midx, models, options, k, normalize, verbose, nbest, save_alignment is not None, save_alphas is not None, suppress_unk,useAlphaFirstFactorForAll))
         processes[midx].start()
 
     # utility function
@@ -284,6 +284,7 @@ if __name__ == "__main__":
     parser.add_argument('--output_alphas', '-f', type=argparse.FileType('w'),
                         default=None, metavar='PATH',
                         help="Output file for alignment weights (default: standard output)")
+    parser.add_argument('--use_alpha_first_factor', '-s', action='store_true', help="Use alpha of first factor for all factors")
     parser.add_argument('--json_alignment', action="store_true",
                         help="Output alignment in json format")
     parser.add_argument('--n-best', action="store_true",
@@ -296,4 +297,4 @@ if __name__ == "__main__":
     main(args.models, args.input,
          args.output, k=args.k, normalize=args.n, n_process=args.p,
          chr_level=args.c, verbose=args.v, nbest=args.n_best, suppress_unk=args.suppress_unk,
-         print_word_probabilities = args.print_word_probabilities, save_alignment=args.output_alignment, a_json=args.json_alignment, save_alphas=args.output_alphas)
+         print_word_probabilities = args.print_word_probabilities, save_alignment=args.output_alignment, a_json=args.json_alignment, save_alphas=args.output_alphas,useAlphaFirstFactorForAll=args.use_alpha_first_factor)

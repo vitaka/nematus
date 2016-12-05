@@ -324,7 +324,7 @@ def build_model(tparams, options):
 
 
 # build a sampler
-def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
+def build_sampler(tparams, options, use_noise, trng, return_alignment=False, useAlphaFirstFactorForAll=False):
     x = tensor.tensor3('x', dtype='int64')
     xr = x[:,::-1]
     n_timesteps = x.shape[1]
@@ -439,7 +439,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
                                             ctx_dropout_l=ctx_dropout_d_l,
                                             ctx_dropout_j=ctx_dropout_d_j,
                                             rec_dropout=rec_dropout_d,
-                                            profile=profile)
+                                            profile=profile,useAlphaFirstFactorForAll=useAlphaFirstFactorForAll)
 
     # get the next hidden state
     next_state = proj[0]
