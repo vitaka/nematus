@@ -839,7 +839,7 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
 
             # we are using a dictionary to select which intermediate
             # factors have generated the final surface forms and
-            # use them as an input to the decoders
+            # use them as an input to the decoders.
             # for homograph words, we choose the combination of factors
             # with the highest probability
             #
@@ -982,7 +982,8 @@ def train(dim_word=100,  # word vector dimensionality
           domain_interpolation_min=0.1,
           domain_interpolation_inc=0.1,
           domain_interpolation_indomain_datasets=['indomain.en', 'indomain.fr'],
-          maxibatch_size=20): #How many minibatches to load at one time
+          maxibatch_size=20,#How many minibatches to load at one time
+          myinversegenerationdict=None):
 
     # Model options
     model_options = locals().copy()
@@ -1022,6 +1023,10 @@ def train(dim_word=100,  # word vector dimensionality
         worddicts_r[ii] = dict()
         for kk, vv in worddicts[ii].iteritems():
             worddicts_r[ii][vv] = kk
+
+    inversegenerationdict_d=dict()
+    with open(myinversegenerationdict, 'rb') as f:
+        inversegenerationdict_d=json.load(f)
 
     #n_words is now a list of lengths, one for each TL factor
     if n_words_src is None:
@@ -1284,13 +1289,13 @@ def train(dim_word=100,  # word vector dimensionality
                 for jj in xrange(numpy.minimum(5, x.shape[2])):
                     stochastic = True
 
-                    sample, score, sample_word_probs, alignment = gen_sample(f_init, f_next,
+                    sample, score, sample_word_probs, alignment = gen_sample([f_init], [f_next],
                                                x[:, :, jj][:, :, None],factors_tl=factors_tl,
                                                trng=trng, k=1,
                                                maxlen=30,
                                                stochastic=stochastic,
                                                argmax=False,
-                                               suppress_unk=False)
+                                               suppress_unk=False,inversegenerationdict=inversegenerationdict_d)
                     print 'Source ', jj, ': ',
                     for pos in range(x.shape[1]):
                         if x[0, pos, jj] == 0:

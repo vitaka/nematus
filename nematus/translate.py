@@ -7,12 +7,13 @@ import argparse
 import numpy
 import json
 import cPickle as pkl
+import json
 
 from multiprocessing import Process, Queue
 from util import load_dict
 
 
-def translate_model(queue, rqueue, pid, models, options, k, normalize, verbose, nbest, return_alignment, suppress_unk):
+def translate_model(queue, rqueue, pid, models, options, k, normalize, verbose, nbest, return_alignment, suppress_unk, inversegenerationdict):
 
     from theano_util import (load_params, init_theano_params)
     from nmt import (build_sampler, gen_sample, init_params)
@@ -40,12 +41,17 @@ def translate_model(queue, rqueue, pid, models, options, k, normalize, verbose, 
         fs_init.append(f_init)
         fs_next.append(f_next)
 
+    #Load inverse generation dictionary
+    inversegenerationdict_d=None
+    with open(inversegenerationdict, 'rb') as f:
+        inversegenerationdict_d=json.load(f)
+
     def _translate(seq):
         # sample given an input sequence and obtain scores
         sample, score, word_probs, alignment = gen_sample(fs_init, fs_next,
                                    numpy.array(seq).T.reshape([len(seq[0]), len(seq), 1]), factors_tl=options['factors_tl'],
                                    trng=trng, k=k, maxlen=200,
-                                   stochastic=False, argmax=False, return_alignment=return_alignment, suppress_unk=suppress_unk)
+                                   stochastic=False, argmax=False, return_alignment=return_alignment, suppress_unk=suppress_unk, inversegenerationdict=inversegenerationdict_d)
 
         # normalize scores according to sequence lengths
         if normalize:
@@ -100,7 +106,7 @@ def print_matrices(mm, file):
 
 
 def main(models, source_file, saveto, save_alignment=None, k=5,
-         normalize=False, n_process=5, chr_level=False, verbose=False, nbest=False, suppress_unk=False, a_json=False, print_word_probabilities=False):
+         normalize=False, n_process=5, chr_level=False, verbose=False, nbest=False, suppress_unk=False, a_json=False, print_word_probabilities=False,invgendict=None):
     # load model model_options
     options = []
     for model in models:
@@ -162,7 +168,7 @@ def main(models, source_file, saveto, save_alignment=None, k=5,
     for midx in xrange(n_process):
         processes[midx] = Process(
             target=translate_model,
-            args=(queue, rqueue, midx, models, options, k, normalize, verbose, nbest, save_alignment is not None, suppress_unk))
+            args=(queue, rqueue, midx, models, options, k, normalize, verbose, nbest, save_alignment is not None, suppress_unk,invgendict))
         processes[midx].start()
 
     # utility function
@@ -281,10 +287,11 @@ if __name__ == "__main__":
                         help="Write n-best list (of size k)")
     parser.add_argument('--suppress-unk', action="store_true", help="Suppress hypotheses containing UNK.")
     parser.add_argument('--print-word-probabilities', '-wp',action="store_true", help="Print probabilities of each world")
+    parser.add_argument('--inverse-generation-dict', '-d', help="Inverse generation dictionary. Needed for factored decoding")
 
     args = parser.parse_args()
 
     main(args.models, args.input,
          args.output, k=args.k, normalize=args.n, n_process=args.p,
          chr_level=args.c, verbose=args.v, nbest=args.n_best, suppress_unk=args.suppress_unk,
-         print_word_probabilities = args.print_word_probabilities, save_alignment=args.output_alignment, a_json=args.json_alignment)
+         print_word_probabilities = args.print_word_probabilities, save_alignment=args.output_alignment, a_json=args.json_alignment,invgendict=args.inverse_generation_dict)
