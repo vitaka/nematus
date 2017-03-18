@@ -29,7 +29,7 @@ class SetEncoder(json.JSONEncoder):
 vocSizePerFactor =  [ int(limit)  if limit != "-" else None for limit in sys.argv[1].split(",") ]
 
 #load json dictionaries
-dictionaries = [load_dict( sys.argv[2+i] ) for i in xrange(len(vocSizePerFactor))]
+dictionaries = [ load_dict( sys.argv[2+i] ) for i in xrange(len(vocSizePerFactor)) ]
 
 #from surface forms to set of tuples of factors. All of them encoded as numbers
 generation_dict=dict()
