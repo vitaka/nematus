@@ -753,7 +753,7 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
             probs_flat = probs.flatten()
             ranks_flat = cand_flat.argpartition(k-dead_k-1)[:(k-dead_k)]
             #one element per TL factor: each element is nparray: live_k x n_words
-            probs_factors=  [ sum(next_p_factors)[:][factor]/num_models  for factor in xrange(factors_tl-1) ]
+            probs_factors=  [ sum(next_p_factors[:][factor])/num_models  for factor in xrange(factors_tl-1) ]
 
             #averaging the attention weights accross models
             if return_alignment:
