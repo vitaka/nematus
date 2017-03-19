@@ -681,6 +681,14 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
 # this function iteratively calls f_init and f_next functions.
 def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
                stochastic=True, argmax=False, return_alignment=False, suppress_unk=False, inversegenerationdict=dict()):
+    DEBUG=False
+
+    if DEBUG:
+        print >> sys.stderr, "{} entries in dict".format(len(inversegenerationdict))
+        #print >> sys.stderr, ";".join( [str(k) for k in inversegenerationdict.keys()]  )
+        print >> sys.stderr, "11 is in dict: "+str(11 in inversegenerationdict)
+        print >> sys.stderr, "11 str is in dict: "+str("11" in inversegenerationdict)
+
 
     # k is the beam size we have
     if k > 1:
@@ -753,7 +761,10 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
             probs_flat = probs.flatten()
             ranks_flat = cand_flat.argpartition(k-dead_k-1)[:(k-dead_k)]
             #one element per TL factor: each element is nparray: live_k x n_words
-            probs_factors=  [ sum(next_p_factors[:][factor])/num_models  for factor in xrange(factors_tl-1) ]
+            probs_factors=[]
+            for factor in xrange(factors_tl-1):
+                probs_factors.append( sum(next_p_factors[i][factor] for i in xrange(num_models))/num_models)
+            #probs_factors=  [ sum(next_p_factors[:][factor])/num_models  for factor in xrange(factors_tl-1) ]
 
             #averaging the attention weights accross models
             if return_alignment:
@@ -844,12 +855,12 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
             # with the highest probability
             #
             #next_w = numpy.array([w[-1] for w in hyp_samples])
-            next_w_l=[ [] for factor in xrange(factors_tl-1) ]
+            next_w_l=[ [] for factor in xrange(factors_tl) ]
             #first inefficient version:
             for hyp_idx,w in enumerate(hyp_samples):
                 # we will always find the word in the dictionary since
                 # we are operating with numbers and OOVs are already mapped to UNK
-                analyses=inversegenerationdict[w[-1]]
+                analyses=inversegenerationdict[str(w[-1])]
                 if len(analyses) == 1:
                     for factor in xrange(factors_tl-1):
                         next_w_l[factor].append(analyses[0][factor])
