@@ -681,7 +681,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
 # this function iteratively calls f_init and f_next functions.
 def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
                stochastic=True, argmax=False, return_alignment=False, suppress_unk=False, inversegenerationdict=dict()):
-    DEBUG=False
+    DEBUG=True
 
     if DEBUG:
         print >> sys.stderr, "{} entries in dict".format(len(inversegenerationdict))
@@ -734,6 +734,9 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
             ctx = numpy.tile(ctx0[i], [live_k, 1])
             inps = next_w_l + [ctx ] + next_state_l[i]
             #outs = [next_probs, next_sample] + next_state_l
+            if DEBUG:
+		print >>sys.stderr, "next_w_l: {} next_state_l[i]: {}".format(len(next_w_l),len(next_state_l[i]))
+		print >>sys.stderr, "Calling f_next[{}] with {} elements".format(i,len(inps))
             ret = f_next[i](*inps)
             # dimension of dec_alpha (k-beam-size, number-of-input-hidden-units)
             next_p[i], next_w_tmp, next_state_l[i], next_p_factors[i] = ret[0], ret[1], ret[2:2+factors_tl],ret[2+factors_tl:2+factors_tl+factors_tl-1]
@@ -873,7 +876,7 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
                         analysis_probs.append(   sum(  word_probs_factors[hyp_idx][factor][analysis[factor]] for factor in xrange(factors_tl-1))   )
                     max_idx=numpy.argmax(numpy.array(analysis_probs))
                     for factor in xrange(factors_tl-1):
-                        next_w_l[factor].append(analyses[max_idx][factor])
+                        next_w_l[factor].append(int(analyses[max_idx][factor]))
                 next_w_l[factors_tl-1].append(w[-1])
             for i in xrange(len(next_w_l)):
                 next_w_l[i]=numpy.array(next_w_l[i])
