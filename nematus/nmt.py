@@ -723,7 +723,7 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
     # get initial state of decoder rnn and encoder context
     for i in xrange(num_models):
         ret = f_init[i](x)
-        #next_state is a list with one state per factor
+        #next_state_l[i] is a list with one state per factor
         next_state_l[i] = ret[:-1]
         ctx0[i] = ret[-1]
     next_w_l = [ -1 * numpy.ones((1,)).astype('int64') for factor in xrange(factors_tl) ]  # bos indicator
@@ -881,7 +881,14 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
             for i in xrange(len(next_w_l)):
                 next_w_l[i]=numpy.array(next_w_l[i])
 
-            next_state_l = [ [numpy.array(factor_state) for factor_state in state ] for state in zip(*hyp_states)]
+            next_state_l = []
+            for state in zip(*hyp_states):
+                resultForThisModel=[]
+                for factor in xrange(factors_tl):
+                    hypsForFactor=numpy.array( [hypstate[factor] for hypstate in state ] )
+                    resultForThisModel.append(hypsForFactor)
+                next_state_l.append(resultForThisModel)
+            #[ [numpy.array(factor_state) for factor_state in state ] for state in zip(*hyp_states) ]
 
     if not stochastic:
         # dump every remaining one
