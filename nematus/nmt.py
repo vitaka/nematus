@@ -681,7 +681,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
 # this function iteratively calls f_init and f_next functions.
 def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
                stochastic=True, argmax=False, return_alignment=False, suppress_unk=False, inversegenerationdict=dict()):
-    DEBUG=True
+    DEBUG=False
 
     if DEBUG:
         print >> sys.stderr, "{} entries in dict".format(len(inversegenerationdict))
