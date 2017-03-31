@@ -928,11 +928,11 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
         ### in optional save weights mode.
         if alignweights:
             #TODO: this part does not work
-            pprobs, attention = f_log_probs(*([x, x_mask]+ y_k + y_mask_l))
+            pprobs, attention = f_log_probs(*([x, x_mask]+ y_l + y_mask_l))
             for jdata in get_alignments(attention, x_mask, y_mask):
                 alignments_json.append(jdata)
         else:
-            pprobs = f_log_probs(*([x, x_mask]+ y_k + y_mask_l))
+            pprobs = f_log_probs(*([x, x_mask]+ y_l + y_mask_l))
 
         # normalize scores according to output length
         if normalize:
