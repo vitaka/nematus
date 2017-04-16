@@ -656,7 +656,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
                           prefix=factored_layer_name('ff_logit',factor), activ='linear')
 
     #generator output has 1 dimenstion here, but code works anyway
-    generator_probs=probs = tensor.nnet.softmax(logit)
+    generator_probs= tensor.nnet.softmax(logit)
 
     # sample from softmax distribution to get the sample
     next_sample = trng.multinomial(pvals=generator_probs).argmax(1)
@@ -665,7 +665,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     # sampled word for the next target, next hidden state to be used
     print >>sys.stderr, 'Building f_next'
     inps = y_l + [ctx] + init_state_inputs_l
-    outs = [next_probs, next_sample] + next_state_l + next_probs_l
+    outs = [generator_probs, next_sample] + next_state_l + next_probs_l
     #TODO: y_l has as many items as factors
     #init_state_inputs_l as as many items as factors
     #next_state_l has as many items as factors
@@ -737,8 +737,8 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
             inps = next_w_l + [ctx ] + next_state_l[i]
             #outs = [next_probs, next_sample] + next_state_l
             if DEBUG:
-		print >>sys.stderr, "next_w_l: {} next_state_l[i]: {}".format(len(next_w_l),len(next_state_l[i]))
-		print >>sys.stderr, "Calling f_next[{}] with {} elements".format(i,len(inps))
+                print >>sys.stderr, "next_w_l: {} next_state_l[i]: {}".format(len(next_w_l),len(next_state_l[i]))
+                print >>sys.stderr, "Calling f_next[{}] with {} elements".format(i,len(inps))
             ret = f_next[i](*inps)
             # dimension of dec_alpha (k-beam-size, number-of-input-hidden-units)
             next_p[i], next_w_tmp, next_state_l[i], next_p_factors[i] = ret[0], ret[1], ret[2:2+factors_tl],ret[2+factors_tl:2+factors_tl+factors_tl-1]
