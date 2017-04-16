@@ -16,6 +16,8 @@ import warnings
 import sys
 import time
 
+import theano.sandbox.cuda.basic_ops as sbcuda
+
 from subprocess import Popen
 
 from collections import OrderedDict
@@ -1278,9 +1280,12 @@ def train(dim_word=100,  # word vector dimensionality
                 print 'NaN detected'
                 return 1., 1., 1.
 
+
             # verbose
             if numpy.mod(uidx, dispFreq) == 0:
-                print 'Epoch ', eidx, 'Update ', uidx, 'Cost ', cost, 'UD ', ud
+                GPUFreeMemoryInBytes = sbcuda.cuda_ndarray.cuda_ndarray.mem_info()[0]
+                freeGPUMemInGBs = GPUFreeMemoryInBytes/1024./1024/1024
+                print 'Epoch ', eidx, 'Update ', uidx, 'Cost ', cost, 'UD ', ud, 'Free ',freeGPUMemInGBs
 
             # save the best model so far, in addition, save the latest model
             # into a separate file with the iteration number for external eval
@@ -1394,10 +1399,11 @@ def train(dim_word=100,  # word vector dimensionality
                     print "Calling external validation script"
                     print 'Saving  model...',
                     params = unzip_from_theano(tparams)
-                    numpy.savez(saveto +'.dev', history_errs=history_errs, uidx=uidx, **params)
-                    json.dump(model_options, open('%s.dev.npz.json' % saveto, 'wb'), indent=2)
-                    print 'Done'
-                    p = Popen([external_validation_script])
+                    numpy.savez(saveto +'.dev.'+str(uidx), history_errs=history_errs, uidx=uidx, **params)
+                    jsonFile=saveto+'.dev.'+str(uidx)+'.npz.json'
+                    json.dump(model_options, open( jsonFile, 'wb'), indent=2)
+                    print '(not) Calling at '+time.strftime("%c")
+                    #p = Popen([external_validation_script])
 
             # finish after this many updates
             if uidx >= finish_after:
