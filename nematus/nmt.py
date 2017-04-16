@@ -745,7 +745,7 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
             if DEBUG:
                 print >> sys.stderr, "Output position {}.Distribution of prob. for next word, hypothesis 0".format(ii)
                 for myi in xrange(len(next_p[i][0])):
-                    print sys.stderr, str(myi)+":"+str(next_p[i][0][myi])
+                    print >> sys.stderr, str(myi)+":"+str(next_p[i][0][myi])
 
             if return_alignment:
                 #we only consider alphas of first factor
