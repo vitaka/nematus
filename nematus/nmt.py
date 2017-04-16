@@ -737,6 +737,11 @@ def gen_sample(f_init, f_next, x, factors_tl=1, trng=None, k=1, maxlen=30,
             ret = f_next[i](*inps)
             # dimension of dec_alpha (k-beam-size, number-of-input-hidden-units)
             next_p[i], next_w_tmp, next_state_l[i], next_p_factors[i] = ret[0], ret[1], ret[2:2+factors_tl],ret[2+factors_tl:2+factors_tl+factors_tl-1]
+            if DEBUG:
+                print >> sys.stderr, "Output position {}.Distribution of prob. for next word, hypothesis 0".format(ii)
+                for myi in xrange(len(next_p[i][0])):
+                    print sys.stderr, str(myi)+":"+str(next_p[i][0][myi])
+
             if return_alignment:
                 #we only consider alphas of first factor
                 dec_alphas[i] = ret[2+factors_tl+factors_tl-1]
