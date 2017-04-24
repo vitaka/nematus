@@ -1284,8 +1284,8 @@ def train(dim_word=100,  # word vector dimensionality
             cost = f_grad_shared(*myinps)
 
             #Compute cost of surface forms, cost of each factor
-            batchcost_surface = f_cost_surface(*myinps)
-            batchcost_factors=[ f_cost_factor(*myinps) for f_cost_factor in f_cost_factors_l  ]
+            batchcost_surface = f_cost_surface(*myinps).mean()
+            batchcost_factors=[ f_cost_factor(*myinps).mean() for f_cost_factor in f_cost_factors_l  ]
 
             # do the update on parameters
             f_update(lrate)
