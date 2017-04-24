@@ -442,7 +442,7 @@ def build_model(tparams, options):
     #print opt_ret
 
     #return trng, use_noise, x, x_mask, y, y_mask, opt_ret, cost
-    return trng, use_noise, x, x_mask, y_l, y_mask_l, opt_ret, final_cost
+    return trng, use_noise, x, x_mask, y_l, y_mask_l, opt_ret, final_cost, cost, cost_l
 
 
 # build a sampler
@@ -1125,7 +1125,7 @@ def train(dim_word=100,  # word vector dimensionality
     trng, use_noise, \
         x, x_mask, y_l, y_mask_l, \
         opt_ret, \
-        cost = \
+        cost, cost_surface, cost_factors_l = \
         build_model(tparams, model_options)
 
     #inps = [x, x_mask, y, y_mask]
@@ -1176,6 +1176,10 @@ def train(dim_word=100,  # word vector dimensionality
     print 'Building f_cost...',
     f_cost = theano.function(inps, cost, profile=profile)
     print 'Done'
+
+    ## Compile functions for cost of different factors
+    f_cost_surface = theano.function(inps, cost_surface, profile=profile)
+    f_cost_factors_l =[ theano.function(inps, cost_factor, profile=profile) for cost_factor in cost_factors_l]
 
     # allow finetuning with fixed embeddings
     if finetune:
@@ -1274,6 +1278,10 @@ def train(dim_word=100,  # word vector dimensionality
             #cost = f_grad_shared(x, x_mask, y_l, y_mask_l)
             cost = f_grad_shared(*myinps)
 
+            #Compute cost of surface forms, cost of each factor
+            batchcost_surface = f_cost_surface(*myinps)
+            batchcost_factors=[ f_cost_factor(*myinps) for f_cost_factor in f_cost_factors_l  ]
+
             # do the update on parameters
             f_update(lrate)
 
@@ -1285,12 +1293,12 @@ def train(dim_word=100,  # word vector dimensionality
                 print 'NaN detected'
                 return 1., 1., 1.
 
-
             # verbose
             if numpy.mod(uidx, dispFreq) == 0:
                 GPUFreeMemoryInBytes = sbcuda.cuda_ndarray.cuda_ndarray.mem_info()[0]
                 freeGPUMemInGBs = GPUFreeMemoryInBytes/1024./1024/1024
                 print 'Epoch ', eidx, 'Update ', uidx, 'Cost ', cost, 'UD ', ud, 'Free ',freeGPUMemInGBs
+                print 'Surface cost',batchcost_surface, 'Factors cost'," ".join([str(c) for c in batchcost_factors])
 
             # save the best model so far, in addition, save the latest model
             # into a separate file with the iteration number for external eval
