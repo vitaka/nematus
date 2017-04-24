@@ -1428,7 +1428,7 @@ def train(dim_word=100,  # word vector dimensionality
 
                 print 'Valid ', valid_err
                 print 'Valid_surface ', valid_err_surface
-                print 'Valid_factors ', " ".join(str(valid_err_factors_l))
+                print 'Valid_factors ', " ".join([str(valid_err_factor) for valid_err_factor in valid_err_factors_l])
 
                 if external_validation_script:
                     print "Calling external validation script"
