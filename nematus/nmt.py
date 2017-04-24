@@ -1140,6 +1140,8 @@ def train(dim_word=100,  # word vector dimensionality
     # before any regularizer
     print 'Building f_log_probs...',
     f_log_probs = theano.function(inps, cost, profile=profile)
+    f_log_probs_surface=theano.function(inps, cost_surface, profile=profile)
+    f_log_probs_factors_l=[theano.function(inps, c, profile=profile) for c in cost_factors_l]
     print 'Done'
 
     cost = cost.mean()
@@ -1385,6 +1387,20 @@ def train(dim_word=100,  # word vector dimensionality
                 valid_errs, alignment = pred_probs(f_log_probs, prepare_data,
                                         model_options, valid)
                 valid_err =  valid_errs.mean()
+
+                valid_errs_surface, alignment_surface = pred_probs(f_log_probs_surface, prepare_data,
+                                        model_options, valid)
+                valid_err_surface =  valid_errs_surface.mean()
+
+                valid_err_factors_l=[]
+                for f_log_probs_factor in f_log_probs_factors_l:
+                    valid_errs_factor, alignment_factor = pred_probs(f_log_probs_factor, prepare_data,
+                                            model_options, valid)
+                    valid_err_factor =  valid_errs_factor.mean()
+                    valid_err_factors_l.append(valid_err_factor)
+
+
+
                 #sum validation error for each factor
                 history_errs.append(valid_err)
 
@@ -1411,6 +1427,8 @@ def train(dim_word=100,  # word vector dimensionality
                     ipdb.set_trace()
 
                 print 'Valid ', valid_err
+                print 'Valid_surface ', valid_err_surface
+                print 'Valid_factors ', " ".join(str(valid_err_factors_l)
 
                 if external_validation_script:
                     print "Calling external validation script"
