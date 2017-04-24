@@ -1144,6 +1144,9 @@ def train(dim_word=100,  # word vector dimensionality
 
     cost = cost.mean()
 
+    cost_surface=cost_surface.mean()
+    cost_factors_l=[ c.mean() for c in cost_factors_l ]
+
     # apply L2 regularization on weights
     if decay_c > 0.:
         decay_c = theano.shared(numpy.float32(decay_c), name='decay_c')
@@ -1292,6 +1295,7 @@ def train(dim_word=100,  # word vector dimensionality
             if numpy.isnan(cost) or numpy.isinf(cost):
                 print 'NaN detected'
                 return 1., 1., 1.
+
 
             # verbose
             if numpy.mod(uidx, dispFreq) == 0:
