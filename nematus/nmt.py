@@ -1440,7 +1440,7 @@ def train(dim_word=100,  # word vector dimensionality
                 curFLogIndex+=1
 
                 valid_err_factors_l=[]
-                for f_log_probs_factor in f_log_probs_factors_l:
+                for c in cost_factors_l:#just iterating over tl factors
                     valid_errs_factor, alignment_factor = pred_probs_index(f_log_probs_multi, prepare_data,
                                             model_options, valid,curFLogIndex)
                     valid_err_factor =  valid_errs_factor.mean()
