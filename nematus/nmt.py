@@ -1300,10 +1300,10 @@ def train(dim_word=100,  # word vector dimensionality
                 GPUFreeMemoryInBytes = sbcuda.cuda_ndarray.cuda_ndarray.mem_info()[0]
                 freeGPUMemInGBs = GPUFreeMemoryInBytes/1024./1024/1024
                 #Compute cost of surface forms, cost of each factor, but only we want to display them (save time)
-                batchcost_surface = f_cost_surface(*myinps).mean()
-                batchcost_factors=[ f_cost_factor(*myinps).mean() for f_cost_factor in f_cost_factors_l  ]
+                #batchcost_surface = f_cost_surface(*myinps).mean()
+                #batchcost_factors=[ f_cost_factor(*myinps).mean() for f_cost_factor in f_cost_factors_l  ]
                 print 'Epoch ', eidx, 'Update ', uidx, 'Cost ', cost, 'UD ', ud, 'Free ',freeGPUMemInGBs
-                print 'Surface cost',batchcost_surface, 'Factors cost'," ".join([str(c) for c in batchcost_factors])
+                #print 'Surface cost',batchcost_surface, 'Factors cost'," ".join([str(c) for c in batchcost_factors])
 
             # save the best model so far, in addition, save the latest model
             # into a separate file with the iteration number for external eval
