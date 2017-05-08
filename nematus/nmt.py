@@ -957,6 +957,50 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
 
     return numpy.array(probs), alignments_json
 
+# calculate the log probablities on a given corpus using translation model
+def pred_probs_index(f_log_probs, prepare_data, options, iterator, index, verbose=True, normalize=False, alignweights=False):
+    probs = []
+    n_done = 0
+
+    alignments_json = []
+
+    for x, y in iterator:
+        #ensure consistency in number of factors
+        if len(x[0][0]) != options['factors']:
+            sys.stderr.write('Error: mismatch between number of factors in settings ({0}), and number in validation corpus ({1})\n'.format(options['factors'], len(x[0][0])))
+            sys.exit(1)
+
+        n_done += len(x)
+
+        x, x_mask, y_l, y_mask_l = prepare_data(x, y,
+                                            n_words_src=options['n_words_src'],
+                                            n_words=options['n_words'])
+
+        ### in optional save weights mode.
+        if alignweights:
+            #TODO: this part does not work
+            pprobs, attention = f_log_probs(*([x, x_mask]+ y_l + y_mask_l))[index]
+            for jdata in get_alignments(attention, x_mask, y_mask):
+                alignments_json.append(jdata)
+        else:
+            pprobs = f_log_probs(*([x, x_mask]+ y_l + y_mask_l))[index]
+
+        # normalize scores according to output length
+        if normalize:
+            lengths = numpy.array([numpy.count_nonzero(s) for s in y_mask[0].T])
+            pprobs /= lengths
+
+        for pp in pprobs:
+            probs.append(pp)
+
+        if numpy.isnan(numpy.mean(probs)):
+            ipdb.set_trace()
+
+        if verbose:
+            print >>sys.stderr, '%d samples computed' % (n_done)
+
+    return numpy.array(probs), alignments_json
+
 def train(dim_word=100,  # word vector dimensionality
           dim=1000,  # the number of LSTM units
           factors=1, # input factors
@@ -1139,9 +1183,10 @@ def train(dim_word=100,  # word vector dimensionality
 
     # before any regularizer
     print 'Building f_log_probs...',
-    f_log_probs = theano.function(inps, cost, profile=profile)
-    f_log_probs_surface=theano.function(inps, cost_surface, profile=profile)
-    f_log_probs_factors_l=[theano.function(inps, c, profile=profile) for c in cost_factors_l]
+    #f_log_probs = theano.function(inps, cost, profile=profile)
+    #f_log_probs_surface=theano.function(inps, cost_surface, profile=profile)
+    #f_log_probs_factors_l=[theano.function(inps, c, profile=profile) for c in cost_factors_l]
+    f_log_probs_multi=theano.function(inps, [cost,cost_surface]+cost_factors_l, profile=profile)
     print 'Done'
 
     cost = cost.mean()
@@ -1383,22 +1428,24 @@ def train(dim_word=100,  # word vector dimensionality
             # validate model on validation set and early stop if necessary
             if valid and validFreq and numpy.mod(uidx, validFreq) == 0:
                 use_noise.set_value(0.)
-                valid_errs, alignment = pred_probs(f_log_probs, prepare_data,
-                                        model_options, valid)
+                curFLogIndex=0
+                valid_errs, alignment = pred_probs_index(f_log_probs_multi, prepare_data,
+                                        model_options, valid,curFLogIndex)
                 valid_err =  valid_errs.mean()
+                curFLogIndex+=1
 
-                valid_errs_surface, alignment_surface = pred_probs(f_log_probs_surface, prepare_data,
-                                        model_options, valid)
+                valid_errs_surface, alignment_surface = pred_probs_index(f_log_probs_multi, prepare_data,
+                                        model_options, valid,curFLogIndex)
                 valid_err_surface =  valid_errs_surface.mean()
+                curFLogIndex+=1
 
                 valid_err_factors_l=[]
                 for f_log_probs_factor in f_log_probs_factors_l:
-                    valid_errs_factor, alignment_factor = pred_probs(f_log_probs_factor, prepare_data,
-                                            model_options, valid)
+                    valid_errs_factor, alignment_factor = pred_probs_index(f_log_probs_multi, prepare_data,
+                                            model_options, valid,curFLogIndex)
                     valid_err_factor =  valid_errs_factor.mean()
                     valid_err_factors_l.append(valid_err_factor)
-
-
+                    curFLogIndex+=1
 
                 #sum validation error for each factor
                 history_errs.append(valid_err)
