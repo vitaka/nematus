@@ -1228,8 +1228,8 @@ def train(dim_word=100,  # word vector dimensionality
     print 'Done'
 
     ## Compile functions for cost of different factors
-    f_cost_surface = theano.function(inps, cost_surface, profile=profile)
-    f_cost_factors_l =[ theano.function(inps, cost_factor, profile=profile) for cost_factor in cost_factors_l]
+    #f_cost_surface = theano.function(inps, cost_surface, profile=profile)
+    #f_cost_factors_l =[ theano.function(inps, cost_factor, profile=profile) for cost_factor in cost_factors_l]
 
     # allow finetuning with fixed embeddings
     if finetune:
