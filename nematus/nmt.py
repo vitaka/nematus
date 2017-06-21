@@ -1509,13 +1509,37 @@ def train(dim_word=100,  # word vector dimensionality
     if best_p is not None:
         zip_to_theano(best_p, tparams)
 
+    #TODO fix me
     if valid:
-        use_noise.set_value(0.)
-        valid_errs, alignment = pred_probs(f_log_probs, prepare_data,
+        #use_noise.set_value(0.)
+        #valid_errs, alignment = pred_probs(f_log_probs, prepare_data,
                                         model_options, valid)
+        #valid_err =  valid_errs.mean()
+
+        use_noise.set_value(0.)
+        curFLogIndex=0
+        valid_errs, alignment = pred_probs_index(f_log_probs_multi, prepare_data,
+                                model_options, valid,curFLogIndex)
         valid_err =  valid_errs.mean()
+        curFLogIndex+=1
+
+        valid_errs_surface, alignment_surface = pred_probs_index(f_log_probs_multi, prepare_data,
+                                model_options, valid,curFLogIndex)
+        valid_err_surface =  valid_errs_surface.mean()
+        curFLogIndex+=1
+
+        valid_err_factors_l=[]
+        for c in cost_factors_l:#just iterating over tl factors
+            valid_errs_factor, alignment_factor = pred_probs_index(f_log_probs_multi, prepare_data,
+                                    model_options, valid,curFLogIndex)
+            valid_err_factor =  valid_errs_factor.mean()
+            valid_err_factors_l.append(valid_err_factor)
+            curFLogIndex+=1
 
         print 'Valid ', valid_err
+        print 'Valid_surface ', valid_err_surface
+        print 'Valid_factors ', " ".join([str(valid_err_factor) for valid_err_factor in valid_err_factors_l])
+
 
     if best_p is not None:
         params = copy.copy(best_p)
