@@ -436,7 +436,9 @@ def build_model(tparams, options):
     cost = (cost * y_mask).sum(0)
 
     #cost per sample
-    final_cost = cost + options['lambda_parameter']*sum(cost_l)/len(cost_l)
+    final_cost = options['lambda_parameter']*sum(cost_l)/len(cost_l)
+    if options['do_not_train_surface'] == False:
+        final_cost = final_cost + cost
 
     #print "Print out in build_model()"
     #print opt_ret
@@ -1055,7 +1057,8 @@ def train(dim_word=100,  # word vector dimensionality
           domain_interpolation_inc=0.1,
           domain_interpolation_indomain_datasets=['indomain.en', 'indomain.fr'],
           maxibatch_size=20,#How many minibatches to load at one time
-          myinversegenerationdict=None):
+          myinversegenerationdict=None,
+          do_not_train_surface=False): # if enabled, cost function will not depend on the surface form layer
 
     # Model options
     model_options = locals().copy()
@@ -1513,7 +1516,7 @@ def train(dim_word=100,  # word vector dimensionality
     if valid:
         #use_noise.set_value(0.)
         #valid_errs, alignment = pred_probs(f_log_probs, prepare_data,
-                                        model_options, valid)
+        #                                model_options, valid)
         #valid_err =  valid_errs.mean()
 
         use_noise.set_value(0.)
