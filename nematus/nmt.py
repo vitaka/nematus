@@ -1513,7 +1513,7 @@ def train(dim_word=100,  # word vector dimensionality
     if valid:
         #use_noise.set_value(0.)
         #valid_errs, alignment = pred_probs(f_log_probs, prepare_data,
-                                        model_options, valid)
+        #                                model_options, valid)
         #valid_err =  valid_errs.mean()
 
         use_noise.set_value(0.)
