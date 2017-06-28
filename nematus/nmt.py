@@ -91,6 +91,8 @@ def init_params(options):
         params[embedding_name(factor)] = norm_weight(options['n_words_src'], options['dim_per_factor'][factor])
 
     for factor in range(options['factors_tl']):
+        if options['do_not_train_surface'] == True and factor == options['factors_tl']-1:
+            break
         params[embedding_name(factor)+'_dec'] = norm_weight(options['n_words'][factor], options['dim_word_per_factor_tl'][factor])
 
 
@@ -106,6 +108,8 @@ def init_params(options):
     ctxdim = 2 * options['dim']
 
     for factor in xrange(options['factors_tl']):
+        if options['do_not_train_surface'] == True and factor == options['factors_tl']-1:
+            break
         # init_state, init_cell
         params = get_layer_param('ff')(options, params, prefix=factored_layer_name('ff_state',factor),
                                     nin=ctxdim, nout=options['dim_per_factor_tl'][factor])
@@ -347,14 +351,16 @@ def build_model(tparams, options):
         cost_l.append(cost)
         probs_l.append(probs)
 
-    #for each factor, make product of probs and embeddings, concatenate them all
-    #and feed the generator feed-forward
-    generator_input_l=[]
-    for factor in xrange(options['factors_tl']-1):
-        #emb: n_timesteps * n_samples x dim_word_per_factor_tl[factor]
-        emb = tensor.dot(probs_l[factor],tparams[ embedding_name(factor)+'_dec']).reshape([n_timesteps_trg, n_samples,options['dim_word_per_factor_tl'][factor]])
-        generator_input_l.append(emb)
-    generator_input=tensor.concatenate(generator_input_l,axis=-1)
+
+    if options['do_not_train_surface'] == False:
+        #for each factor, make product of probs and embeddings, concatenate them all
+        #and feed the generator feed-forward
+        generator_input_l=[]
+        for factor in xrange(options['factors_tl']-1):
+            #emb: n_timesteps * n_samples x dim_word_per_factor_tl[factor]
+            emb = tensor.dot(probs_l[factor],tparams[ embedding_name(factor)+'_dec']).reshape([n_timesteps_trg, n_samples,options['dim_word_per_factor_tl'][factor]])
+            generator_input_l.append(emb)
+        generator_input=tensor.concatenate(generator_input_l,axis=-1)
 
 
     #last factor: surface form
@@ -371,69 +377,72 @@ def build_model(tparams, options):
     y_mask_l.append(y_mask)
 
 
-    emb = tparams[ embedding_name(factor)+'_dec'][y.flatten()]
-    emb = emb.reshape([n_timesteps_trg, n_samples, options['dim_word_per_factor_tl'][factor]])
+    if options['do_not_train_surface'] == False:
+        emb = tparams[ embedding_name(factor)+'_dec'][y.flatten()]
+        emb = emb.reshape([n_timesteps_trg, n_samples, options['dim_word_per_factor_tl'][factor]])
 
-    emb_shifted = tensor.zeros_like(emb)
-    emb_shifted = tensor.set_subtensor(emb_shifted[1:], emb[:-1])
-    emb = emb_shifted
+        emb_shifted = tensor.zeros_like(emb)
+        emb_shifted = tensor.set_subtensor(emb_shifted[1:], emb[:-1])
+        emb = emb_shifted
 
 
-    if options['use_dropout']:
-        target_dropout=shared_dropout_layer((n_timesteps_trg, n_samples, 1), use_noise, trng, retain_probability_target)
-        target_dropout = tensor.tile(target_dropout, (1,1,options['dim_word_per_factor_tl'][factor]))
-        emb *= target_dropout
+        if options['use_dropout']:
+            target_dropout=shared_dropout_layer((n_timesteps_trg, n_samples, 1), use_noise, trng, retain_probability_target)
+            target_dropout = tensor.tile(target_dropout, (1,1,options['dim_word_per_factor_tl'][factor]))
+            emb *= target_dropout
 
-    # initial decoder state
-    init_state = get_layer_constr('ff')(tparams, ctx_mean, options,
-                                prefix=factored_layer_name('ff_state',factor), activ='tanh')
+        # initial decoder state
+        init_state = get_layer_constr('ff')(tparams, ctx_mean, options,
+                                    prefix=factored_layer_name('ff_state',factor), activ='tanh')
 
-    #surface form decoder
-    final_proj = get_layer_constr('gru_2inputs')(tparams, emb, generator_input, options,
-                                        prefix='rnngenerator',
-                                        mask=y_mask,
-                                        one_step=False,
-                                        init_state=init_state,
-                                        emb_dropout=emb_dropout_d_l[factor],
-                                        emb_factor_dropout=emb_dropout_d_factors,
-                                        rec_dropout=rec_dropout_d_l[factor],
-                                        profile=profile)
+        #surface form decoder
+        final_proj = get_layer_constr('gru_2inputs')(tparams, emb, generator_input, options,
+                                            prefix='rnngenerator',
+                                            mask=y_mask,
+                                            one_step=False,
+                                            init_state=init_state,
+                                            emb_dropout=emb_dropout_d_l[factor],
+                                            emb_factor_dropout=emb_dropout_d_factors,
+                                            rec_dropout=rec_dropout_d_l[factor],
+                                            profile=profile)
 
-    proj_h=final_proj[0]
-    if options['use_dropout']:
-        proj_h *= shared_dropout_layer((n_samples, options['dim_per_factor_tl'][factor]), use_noise, trng, retain_probability_hidden)
-        emb *= shared_dropout_layer((n_samples,options['dim_word_per_factor_tl'][factor]), use_noise, trng, retain_probability_emb)
-        generator_input *= shared_dropout_layer((n_samples, sum(options['dim_word_per_factor_tl'][:-1])), use_noise, trng, retain_probability_hidden)
+        proj_h=final_proj[0]
+        if options['use_dropout']:
+            proj_h *= shared_dropout_layer((n_samples, options['dim_per_factor_tl'][factor]), use_noise, trng, retain_probability_hidden)
+            emb *= shared_dropout_layer((n_samples,options['dim_word_per_factor_tl'][factor]), use_noise, trng, retain_probability_emb)
+            generator_input *= shared_dropout_layer((n_samples, sum(options['dim_word_per_factor_tl'][:-1])), use_noise, trng, retain_probability_hidden)
 
-    # compute word probabilities
-    logit_lstm = get_layer_constr('ff')(tparams, proj_h, options,
-                                    prefix=factored_layer_name('ff_logit_lstm',factor), activ='linear')
-    logit_prev = get_layer_constr('ff')(tparams, emb, options,
-                                    prefix=factored_layer_name('ff_logit_prev',factor), activ='linear')
-    logit_ctx = get_layer_constr('ff')(tparams, generator_input, options,
-                                   prefix=factored_layer_name('ff_logit_ctx',factor), activ='linear')
-    logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx)
+        # compute word probabilities
+        logit_lstm = get_layer_constr('ff')(tparams, proj_h, options,
+                                        prefix=factored_layer_name('ff_logit_lstm',factor), activ='linear')
+        logit_prev = get_layer_constr('ff')(tparams, emb, options,
+                                        prefix=factored_layer_name('ff_logit_prev',factor), activ='linear')
+        logit_ctx = get_layer_constr('ff')(tparams, generator_input, options,
+                                       prefix=factored_layer_name('ff_logit_ctx',factor), activ='linear')
+        logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx)
 
-    if options['use_dropout']:
-        logit *= shared_dropout_layer((n_samples, options['dim_word_per_factor_tl'][factor]), use_noise, trng, retain_probability_hidden)
+        if options['use_dropout']:
+            logit *= shared_dropout_layer((n_samples, options['dim_word_per_factor_tl'][factor]), use_noise, trng, retain_probability_hidden)
 
-    logit = get_layer_constr('ff')(tparams, logit, options,
-                               prefix=factored_layer_name('ff_logit',factor), activ='linear')
-    #From Theano help: The softmax function will, when applied to a matrix, compute the softmax values row-wise.
-    logit_shp = logit.shape
-    #logit_shp: n_timesteps x n_samples x n_words
-    #probs: n_timesteps*n_samples x n_words
-    generator_probs = tensor.nnet.softmax(logit.reshape([logit_shp[0]*logit_shp[1],
-                                               logit_shp[2]]))
+        logit = get_layer_constr('ff')(tparams, logit, options,
+                                   prefix=factored_layer_name('ff_logit',factor), activ='linear')
+        #From Theano help: The softmax function will, when applied to a matrix, compute the softmax values row-wise.
+        logit_shp = logit.shape
+        #logit_shp: n_timesteps x n_samples x n_words
+        #probs: n_timesteps*n_samples x n_words
+        generator_probs = tensor.nnet.softmax(logit.reshape([logit_shp[0]*logit_shp[1],
+                                                   logit_shp[2]]))
 
-    #compute cost of last factor; compute final cost
-    #shape of y: n_timesteps x n_samples
+        #compute cost of last factor; compute final cost
+        #shape of y: n_timesteps x n_samples
 
-    y_flat = y.flatten()
-    y_flat_idx = tensor.arange(y_flat.shape[0]) * options['n_words'][factor] + y_flat
-    cost = -tensor.log(generator_probs.flatten()[y_flat_idx])
-    cost = cost.reshape([y.shape[0], y.shape[1]])
-    cost = (cost * y_mask).sum(0)
+        y_flat = y.flatten()
+        y_flat_idx = tensor.arange(y_flat.shape[0]) * options['n_words'][factor] + y_flat
+        cost = -tensor.log(generator_probs.flatten()[y_flat_idx])
+        cost = cost.reshape([y.shape[0], y.shape[1]])
+        cost = (cost * y_mask).sum(0)
+    else:
+        cost=None
 
     #cost per sample
     final_cost = options['lambda_parameter']*sum(cost_l)/len(cost_l)
@@ -1180,7 +1189,7 @@ def train(dim_word=100,  # word vector dimensionality
     inps.extend(y_l)
     inps.extend(y_mask_l)
 
-    if validFreq or sampleFreq:
+    if (validFreq or sampleFreq) and not do_not_train_surface:
         print 'Building sampler'
         f_init, f_next = build_sampler(tparams, model_options, use_noise, trng)
 
@@ -1189,12 +1198,17 @@ def train(dim_word=100,  # word vector dimensionality
     #f_log_probs = theano.function(inps, cost, profile=profile)
     #f_log_probs_surface=theano.function(inps, cost_surface, profile=profile)
     #f_log_probs_factors_l=[theano.function(inps, c, profile=profile) for c in cost_factors_l]
-    f_log_probs_multi=theano.function(inps, [cost,cost_surface]+cost_factors_l, profile=profile)
+    if do_not_train_surface:
+        f_log_probs_multi=theano.function(inps, [cost]+cost_factors_l, profile=profile)
+    else:
+        f_log_probs_multi=theano.function(inps, [cost,cost_surface]+cost_factors_l, profile=profile)
     print 'Done'
+
 
     cost = cost.mean()
 
-    cost_surface=cost_surface.mean()
+    if not do_not_train_surface:
+        cost_surface=cost_surface.mean()
     cost_factors_l=[ c.mean() for c in cost_factors_l ]
 
     # apply L2 regularization on weights
@@ -1247,6 +1261,11 @@ def train(dim_word=100,  # word vector dimensionality
             allowedParams.extend([ factored_layer_name('ff_logit',factor)+"_W", factored_layer_name('ff_logit',factor)+"_b"  ])
         #updated_params = OrderedDict([(key,value) for (key,value) in tparams.iteritems() if key in [ 'ff_logit_W', 'ff_logit_b']  ])
         updated_params = OrderedDict([(key,value) for (key,value) in tparams.iteritems() if key in allowedParams  ])
+    else:
+        updated_params = tparams
+
+    if do_not_train_surface:
+        updated_params = OrderedDict([(key,value) for (key,value) in tparams.iteritems() if not key.startswith('Wemb')])
     else:
         updated_params = tparams
 
@@ -1437,10 +1456,11 @@ def train(dim_word=100,  # word vector dimensionality
                 valid_err =  valid_errs.mean()
                 curFLogIndex+=1
 
-                valid_errs_surface, alignment_surface = pred_probs_index(f_log_probs_multi, prepare_data,
-                                        model_options, valid,curFLogIndex)
-                valid_err_surface =  valid_errs_surface.mean()
-                curFLogIndex+=1
+                if not do_not_train_surface:
+                    valid_errs_surface, alignment_surface = pred_probs_index(f_log_probs_multi, prepare_data,
+                                            model_options, valid,curFLogIndex)
+                    valid_err_surface =  valid_errs_surface.mean()
+                    curFLogIndex+=1
 
                 valid_err_factors_l=[]
                 for c in cost_factors_l:#just iterating over tl factors
@@ -1476,7 +1496,8 @@ def train(dim_word=100,  # word vector dimensionality
                     ipdb.set_trace()
 
                 print 'Valid ', valid_err
-                print 'Valid_surface ', valid_err_surface
+                if not do_not_train_surface:
+                    print 'Valid_surface ', valid_err_surface
                 print 'Valid_factors ', " ".join([str(valid_err_factor) for valid_err_factor in valid_err_factors_l])
 
                 if external_validation_script:
