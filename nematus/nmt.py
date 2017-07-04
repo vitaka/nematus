@@ -1067,7 +1067,9 @@ def train(dim_word=100,  # word vector dimensionality
           domain_interpolation_indomain_datasets=['indomain.en', 'indomain.fr'],
           maxibatch_size=20,#How many minibatches to load at one time
           myinversegenerationdict=None,
-          do_not_train_surface=False): # if enabled, cost function will not depend on the surface form layer
+          do_not_train_surface=False, # if enabled, cost function will not depend on the surface form layer
+          finetune_surface_generator=False):
+
 
     # Model options
     model_options = locals().copy()
@@ -1261,6 +1263,9 @@ def train(dim_word=100,  # word vector dimensionality
             allowedParams.extend([ factored_layer_name('ff_logit',factor)+"_W", factored_layer_name('ff_logit',factor)+"_b"  ])
         #updated_params = OrderedDict([(key,value) for (key,value) in tparams.iteritems() if key in [ 'ff_logit_W', 'ff_logit_b']  ])
         updated_params = OrderedDict([(key,value) for (key,value) in tparams.iteritems() if key in allowedParams  ])
+    elif finetune_surface_generator:
+        myfactor=factors_tl-1
+        updated_params = OrderedDict([(key,value) for (key,value) in tparams.iteritems() if key.startswith(embedding_name(myfactor)+'_dec') or key.startswith(factored_layer_name('ff_state',myfactor)) or key.startswith("rnngenerator") or key.startswith(factored_layer_name('ff_logit_lstm',myfactor)) or key.startswith(factored_layer_name('ff_logit_prev',myfactor)) or key.startswith(factored_layer_name('ff_logit_ctx',myfactor)) or key.startswith(factored_layer_name('ff_logit',myfactor)) ])
     else:
         updated_params = tparams
 
