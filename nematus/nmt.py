@@ -1264,8 +1264,22 @@ def train(dim_word=100,  # word vector dimensionality
         #updated_params = OrderedDict([(key,value) for (key,value) in tparams.iteritems() if key in [ 'ff_logit_W', 'ff_logit_b']  ])
         updated_params = OrderedDict([(key,value) for (key,value) in tparams.iteritems() if key in allowedParams  ])
     elif finetune_surface_generator:
+
+	#DEBUG:
+	#print >> sys.stderr, "All params:"
+	#for (key,value) in tparams.iteritems():
+	#	print >>sys.stderr, key
+	#END DEBUG
+
         myfactor=factors_tl-1
         updated_params = OrderedDict([(key,value) for (key,value) in tparams.iteritems() if key.startswith(embedding_name(myfactor)+'_dec') or key.startswith(factored_layer_name('ff_state',myfactor)) or key.startswith("rnngenerator") or key.startswith(factored_layer_name('ff_logit_lstm',myfactor)) or key.startswith(factored_layer_name('ff_logit_prev',myfactor)) or key.startswith(factored_layer_name('ff_logit_ctx',myfactor)) or key.startswith(factored_layer_name('ff_logit',myfactor)) ])
+
+	#DEBUG:
+	#print >> sys.stderr, "Updated params:"
+	#for (key,value) in updated_params.iteritems():
+	#	 print >>sys.stderr, key
+	#END DEBUG
+
     else:
         updated_params = tparams
 
