@@ -1566,10 +1566,11 @@ def train(dim_word=100,  # word vector dimensionality
         valid_err =  valid_errs.mean()
         curFLogIndex+=1
 
-        valid_errs_surface, alignment_surface = pred_probs_index(f_log_probs_multi, prepare_data,
-                                model_options, valid,curFLogIndex)
-        valid_err_surface =  valid_errs_surface.mean()
-        curFLogIndex+=1
+        if not do_not_train_surface:
+            valid_errs_surface, alignment_surface = pred_probs_index(f_log_probs_multi, prepare_data,
+                                    model_options, valid,curFLogIndex)
+            valid_err_surface =  valid_errs_surface.mean()
+            curFLogIndex+=1
 
         valid_err_factors_l=[]
         for c in cost_factors_l:#just iterating over tl factors
@@ -1580,7 +1581,8 @@ def train(dim_word=100,  # word vector dimensionality
             curFLogIndex+=1
 
         print 'Valid ', valid_err
-        print 'Valid_surface ', valid_err_surface
+        if not do_not_train_surface:
+            print 'Valid_surface ', valid_err_surface
         print 'Valid_factors ', " ".join([str(valid_err_factor) for valid_err_factor in valid_err_factors_l])
 
 
