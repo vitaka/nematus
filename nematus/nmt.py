@@ -1134,6 +1134,11 @@ def train(dim_word=100,  # word vector dimensionality
         except:
             with open('%s.pkl' % saveto, 'rb') as f:
                 loaded_model_options = pkl.load(f)
+        if "do_not_train_surface" in loaded_model_options:
+            del loaded_model_options['do_not_train_surface']
+        if "finetune_surface_generator" in loaded_model_options:
+            del loaded_model_options['finetune_surface_generator']
+
         model_options.update(loaded_model_options)
 
     print 'Loading data'
