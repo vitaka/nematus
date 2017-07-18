@@ -2,6 +2,7 @@
 Theano utility functions
 '''
 
+import sys
 import json
 import cPickle as pkl
 import numpy
@@ -46,7 +47,7 @@ def load_params(path, params):
     pp = numpy.load(path)
     for kk, vv in params.iteritems():
         if kk not in pp:
-            warnings.warn('%s is not in the archive' % kk)
+            print >> sys.stderr, '%s is not in the archive' % kk
             continue
         params[kk] = pp[kk]
 
