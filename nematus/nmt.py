@@ -1173,6 +1173,13 @@ def train(dim_word=100,  # word vector dimensionality
 
     print 'Building model'
     params = init_params(model_options)
+
+    print >> sys.stderr, "do_not_train_surface:"+str(model_options["do_not_train_surface"])
+
+    print >> sys.stderr, "params after init"
+    for key in params:
+        print >> sys.stderr, key
+
     # reload parameters
     if reload_ and os.path.exists(saveto):
         print 'Reloading model parameters'
@@ -1180,11 +1187,19 @@ def train(dim_word=100,  # word vector dimensionality
 
     tparams = init_theano_params(params)
 
+    print >> sys.stderr, "tparams after reload"
+    for key in tparams:
+        print >> sys.stderr, key
+
     trng, use_noise, \
         x, x_mask, y_l, y_mask_l, \
         opt_ret, \
         cost, cost_surface, cost_factors_l = \
         build_model(tparams, model_options)
+
+    print >> sys.stderr, "tparams after build_model"
+    for key in tparams:
+        print >> sys.stderr, key
 
     #inps = [x, x_mask, y, y_mask]
     inps=[x, x_mask]
