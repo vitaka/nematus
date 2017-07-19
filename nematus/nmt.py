@@ -1303,11 +1303,6 @@ def train(dim_word=100,  # word vector dimensionality
     else:
         updated_params = tparams
 
-    if do_not_train_surface:
-        updated_params = OrderedDict([(key,value) for (key,value) in tparams.iteritems() if not key.startswith('Wemb')])
-    else:
-        updated_params = tparams
-
     print 'Computing gradient...',
     grads = tensor.grad(cost, wrt=itemlist(updated_params))
     print 'Done'
