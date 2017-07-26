@@ -1336,7 +1336,9 @@ def train(dim_word=100,  # word vector dimensionality
     # reload history
     if reload_ and os.path.exists(saveto):
         rmodel = numpy.load(saveto)
-        history_errs = list(rmodel['history_errs'])
+        #If we are finetuning a surface generator, we don't want previous history, as scores are not comparable
+        if not finetune_surface_generator:
+            history_errs = list(rmodel['history_errs'])
         if 'uidx' in rmodel:
             uidx = rmodel['uidx']
 
