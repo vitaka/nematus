@@ -103,6 +103,9 @@ def init_params(options):
     params = get_layer_param('embedding')(options, params, options['n_words_src'], options['dim_per_factor'], options['factors'], suffix='')
     if not options['tie_encoder_decoder_embeddings']:
         params = get_layer_param('embedding')(options, params, options['n_words'], options['dim_word'], suffix='_dec')
+        if options['multiple_decoders_connection_feedback']:
+            params = get_layer_param('embedding')(options, params, options['n_words_factor1'], options['dim_word_factor1'], suffix='_dec_factor1')
+
 
     # encoder: bidirectional RNN
     params = get_layer_param(options['encoder'])(options, params,
@@ -148,6 +151,12 @@ def init_params(options):
     # init_state, init_cell
     params = get_layer_param('ff')(options, params, prefix='ff_state',
                                 nin=ctxdim, nout=dec_state)
+
+    if options['multiple_decoders_connection_feedback']:
+        # init_state, init_cell
+        params = get_layer_param('ff')(options, params, prefix='ff_state_factor1',
+                                    nin=ctxdim, nout=dec_state)
+
     # decoder
     params = get_layer_param(options['decoder'])(options, params,
                                               prefix='decoder',
@@ -155,6 +164,14 @@ def init_params(options):
                                               dim=options['dim'],
                                               dimctx=ctxdim,
                                               recurrence_transition_depth=options['dec_base_recurrence_transition_depth'])
+
+    if options['multiple_decoders_connection_feedback']:
+        params = get_layer_param(options['decoder'])(options, params,
+                                                  prefix='decoder_factor1',
+                                                  nin=options['dim_word_factor1'],
+                                                  dim=options['dim'],
+                                                  dimctx=ctxdim,
+                                                  recurrence_transition_depth=options['dec_base_recurrence_transition_depth'])
 
     # deeper layers of the decoder
     if options['dec_depth'] > 1:
@@ -170,6 +187,13 @@ def init_params(options):
                                             dim=options['dim'],
                                             dimctx=ctxdim,
                                             recurrence_transition_depth=options['dec_high_recurrence_transition_depth'])
+            if options['multiple_decoders_connection_feedback']:
+                params = get_layer_param(options['decoder_deep'])(options, params,
+                                                prefix=pp('decoder_factor1', level),
+                                                nin=input_dim,
+                                                dim=options['dim'],
+                                                dimctx=ctxdim,
+                                                recurrence_transition_depth=options['dec_high_recurrence_transition_depth'])
 
     # readout
     params = get_layer_param('ff')(options, params, prefix='ff_logit_lstm',
@@ -187,7 +211,22 @@ def init_params(options):
                                 nout=options['n_words'],
                                 weight_matrix = not options['tie_decoder_embeddings'],
                                 followed_by_softmax=True)
+    if options['multiple_decoders_connection_feedback']:
+        params = get_layer_param('ff')(options, params, prefix='ff_logit_lstm_factor1',
+                                    nin=options['dim'], nout=options['dim_word_factor1'],
+                                    ortho=False)
+        params = get_layer_param('ff')(options, params, prefix='ff_logit_prev_factor1',
+                                    nin=options['dim_word_factor1'],
+                                    nout=options['dim_word_factor1'], ortho=False)
+        params = get_layer_param('ff')(options, params, prefix='ff_logit_ctx_factor1',
+                                    nin=ctxdim, nout=options['dim_word_factor1'],
+                                    ortho=False)
 
+        params = get_layer_param('ff')(options, params, prefix='ff_logit_factor1',
+                                    nin=options['dim_word_factor1'],
+                                    nout=options['n_words_factor1'],
+                                    weight_matrix = not options['tie_decoder_embeddings'],
+                                    followed_by_softmax=True)
     return params
 
 
@@ -442,6 +481,166 @@ def build_decoder(tparams, options, y, ctx, init_state, dropout, x_mask=None, y_
 
     return logit, opt_ret, ret_state
 
+
+# RNN decoder (including embedding and feedforward layer before output)
+#TODO: duplicate dropout?
+#TODO: define embedding layer embedding_dec_factor1
+#define parameter dim_word_factor1, n_words_factor1
+#TODO: careful about pctx_ parameter
+def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init_state, init_state_factors, dropout, x_mask=None, y_mask=None, sampling=False, pctx_=None, shared_vars=None):
+    opt_ret = dict()
+    opt_ret_factors = dict()
+
+    # tell RNN whether to advance just one step at a time (for sampling),
+    # or loop through sequence (for training)
+    if sampling:
+        one_step=True
+    else:
+        one_step=False
+
+    if options['use_dropout']:
+        if sampling:
+            target_dropout = dropout(dropout_probability=options['dropout_target'])
+        else:
+            n_timesteps_trg = y.shape[0]
+            n_samples = y.shape[1]
+            target_dropout = dropout((n_timesteps_trg, n_samples, 1), options['dropout_target'])
+            target_dropout = tensor.tile(target_dropout, (1, 1, options['dim_word']))
+
+    #TODO: think about how to shift sequence, and mix feedback from factors and surface forms
+
+
+    # word embedding (target), we will shift the target sequence one time step
+    # to the right. This is done because of the bi-gram connections in the
+    # readout and decoder rnn. The first target will be all zeros and we will
+    # not condition on the last output.
+    decoder_embedding_suffix = '' if options['tie_encoder_decoder_embeddings'] else '_dec'
+    emb = get_layer_constr('embedding')(tparams, y, suffix=decoder_embedding_suffix)
+    emb_factors = get_layer_constr('embedding')(tparams, y,suffix=decoder_embedding_suffix+'_factor1')
+    if options['use_dropout']:
+        emb *= target_dropout
+        emb_factors *= target_dropout #TODO: duplicate?
+
+    if sampling:
+        emb = tensor.switch(y[:, None] < 0,
+            tensor.zeros((1, options['dim_word'])),
+            emb)
+        emb_factors = tensor.switch(y[:, None] < 0,
+            tensor.zeros((1, options['dim_word_factor1'])),
+            emb_factors)
+    else:
+        emb_shifted = tensor.zeros_like(emb)
+        emb_shifted = tensor.set_subtensor(emb_shifted[1:], emb[:-1])
+        emb = emb_shifted
+        emb_factors_shifted = tensor.zeros_like(emb_factors)
+        emb_factors_shifted = tensor.set_subtensor(emb_factors_shifted[1:], emb_factors[:-1])
+        emb_factors = emb_factors_shifted
+
+
+    #TODO: loop over different dropouts? and pctx_?
+    return_list=[]
+    for factor_suffix,emb,init_state,y, opt_ret in [ ['',emb,init_state,y,opt_ret] ,['_factor1',emb_factors,init_state_factors,y_factors,opt_ret_factors] ]:
+        # decoder - pass through the decoder conditional gru with attention
+        proj = get_layer_constr(options['decoder'])(tparams, emb, options, dropout,
+                                                prefix='decoder'+factor_suffix,
+                                                mask=y_mask, context=ctx,
+                                                context_mask=x_mask,
+                                                pctx_=pctx_,
+                                                one_step=one_step,
+                                                init_state=init_state[0],
+                                                recurrence_transition_depth=options['dec_base_recurrence_transition_depth'],
+                                                dropout_probability_below=options['dropout_embedding'],
+                                                dropout_probability_ctx=options['dropout_hidden'],
+                                                dropout_probability_rec=options['dropout_hidden'],
+                                                truncate_gradient=options['decoder_truncate_gradient'],
+                                                profile=profile)
+        # hidden states of the decoder gru
+        next_state = proj[0]
+
+        # weighted averages of context, generated by attention module
+        ctxs = proj[1]
+
+        # weights (alignment matrix)
+        opt_ret['dec_alphas'] = proj[2]
+
+        # we return state of each layer
+        if sampling:
+            ret_state = [next_state.reshape((1, next_state.shape[0], next_state.shape[1]))]
+        else:
+            ret_state = None
+
+        if options['dec_depth'] > 1:
+            for level in range(2, options['dec_depth'] + 1):
+
+                # don't pass LSTM cell state to next layer
+                if options['decoder'].startswith('lstm'):
+                    next_state = get_slice(next_state, 0, options['dim'])
+
+                if options['dec_deep_context']:
+                    if sampling:
+                        axis=1
+                    else:
+                        axis=2
+                    input_ = tensor.concatenate([next_state, ctxs], axis=axis)
+                else:
+                    input_ = next_state
+
+                out_state = get_layer_constr(options['decoder_deep'])(tparams, input_, options, dropout,
+                                                  prefix=pp('decoder'+factor_suffix, level),
+                                                  mask=y_mask,
+                                                  context=ctx,
+                                                  context_mask=x_mask,
+                                                  pctx_=None, #TODO: we can speed up sampler by precomputing this
+                                                  one_step=one_step,
+                                                  init_state=init_state[level-1],
+                                                  dropout_probability_below=options['dropout_hidden'],
+                                                  dropout_probability_rec=options['dropout_hidden'],
+                                                  recurrence_transition_depth=options['dec_high_recurrence_transition_depth'],
+                                                  truncate_gradient=options['decoder_truncate_gradient'],
+                                                  profile=profile)[0]
+
+                if sampling:
+                    ret_state.append(out_state.reshape((1, proj[0].shape[0], proj[0].shape[1])))
+
+                # don't pass LSTM cell state to next layer
+                if options['decoder'].startswith('lstm'):
+                    out_state = get_slice(out_state, 0, options['dim'])
+
+                # residual connection
+                next_state += out_state
+
+        # don't pass LSTM cell state to next layer
+        elif options['decoder'].startswith('lstm'):
+            next_state = get_slice(next_state, 0, options['dim'])
+
+        if sampling:
+            if options['dec_depth'] > 1:
+                ret_state = tensor.concatenate(ret_state, axis=0)
+            else:
+                ret_state = ret_state[0]
+
+        # hidden layer taking RNN state, previous word embedding and context vector as input
+        # (this counts as the first layer in our deep output, which is always on)
+        logit_lstm = get_layer_constr('ff')(tparams, next_state, options, dropout,
+                                        dropout_probability=options['dropout_hidden'],
+                                        prefix='ff_logit_lstm'+factor_suffix, activ='linear')
+        logit_prev = get_layer_constr('ff')(tparams, emb, options, dropout,
+                                        dropout_probability=options['dropout_embedding'],
+                                        prefix='ff_logit_prev'+factor_suffix, activ='linear')
+        logit_ctx = get_layer_constr('ff')(tparams, ctxs, options, dropout,
+                                       dropout_probability=options['dropout_hidden'],
+                                       prefix='ff_logit_ctx'+factor_suffix, activ='linear')
+        logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx)
+
+        # last layer
+        logit_W = tparams['Wemb' + decoder_embedding_suffix].T if options['tie_decoder_embeddings'] else None
+        logit = get_layer_constr('ff')(tparams, logit, options, dropout,
+                                dropout_probability=options['dropout_hidden'],
+                                prefix='ff_logit'+factor_suffix, activ='linear', W=logit_W, followed_by_softmax=True)
+        return_list.extend([logit, opt_ret, ret_state])
+
+    return return_list
+
 # build a training model
 def build_model(tparams, options):
 
@@ -451,6 +650,10 @@ def build_model(tparams, options):
 
     x_mask = tensor.matrix('x_mask', dtype=floatX)
     y = tensor.matrix('y', dtype='int64')
+    if ['multiple_decoders_connection_feedback']:
+        y_factors = tensor.matrix('y', dtype='int64')
+    else:
+        y_factors=None
     y_mask = tensor.matrix('y_mask', dtype=floatX)
     # source text length 5; batch size 10
     x_mask.tag.test_value = numpy.ones(shape=(5, 10)).astype(floatX)
@@ -477,12 +680,25 @@ def build_model(tparams, options):
     if options['dec_depth'] > 1:
         init_state = tensor.tile(init_state, (options['dec_depth'], 1, 1))
 
-    logit, opt_ret, _ = build_decoder(tparams, options, y, ctx, init_state, dropout, x_mask=x_mask, y_mask=y_mask, sampling=False)
+
+    if options['multiple_decoders_connection_feedback']:
+        # initial decoder state for the factors decoder, TODO: dropout?
+        init_state_factors = get_layer_constr('ff')(tparams, ctx_mean, options, dropout,
+                                        dropout_probability=options['dropout_hidden'],
+                                        prefix='ff_state_factor1', activ='tanh')
+
+        # every decoder RNN layer gets its own copy of the init state
+        init_state_factors = init_state_factors.reshape([1, init_state.shape[0], init_state.shape[1]])
+        if options['dec_depth'] > 1:
+            init_state_factors = tensor.tile(init_state_factors, (options['dec_depth'], 1, 1))
+
+        logit, opt_ret, _, logit_factors, opt_ret_factors, _ = build_decoders_connection_feedback(tparams, options, y, y_factors , ctx, init_state, init_state_factors , dropout, x_mask=x_mask, y_mask=y_mask, sampling=False)
+    else:
+        logit, opt_ret, _ = build_decoder(tparams, options, y, ctx, init_state, dropout, x_mask=x_mask, y_mask=y_mask, sampling=False)
 
     logit_shp = logit.shape
     probs = tensor.nnet.softmax(logit.reshape([logit_shp[0]*logit_shp[1],
-                                               logit_shp[2]]))
-
+                                           logit_shp[2]]))
     # cost
     y_flat = y.flatten()
     y_flat_idx = tensor.arange(y_flat.shape[0]) * options['n_words'] + y_flat
@@ -490,9 +706,25 @@ def build_model(tparams, options):
     cost = cost.reshape([y.shape[0], y.shape[1]])
     cost = (cost * y_mask).sum(0)
 
+    if options['multiple_decoders_connection_feedback']:
+        logit_shp = logit_factors.shape
+        probs = tensor.nnet.softmax(logit_factors.reshape([logit_shp[0]*logit_shp[1],
+                                               logit_shp[2]]))
+        # cost
+        y_flat = y_factors.flatten()
+        y_flat_idx = tensor.arange(y_flat.shape[0]) * options['n_words_factor1'] + y_flat
+        cost_factors = -tensor.log(probs.flatten()[y_flat_idx])
+        cost_factors = cost_factors.reshape([y_factors.shape[0], y_factors.shape[1]])
+        cost_factors = (cost_factors * y_mask).sum(0)
+        final_cost=cost+cost_factors
+    else:
+        final_cost=cost
+
     #print "Print out in build_model()"
     #print opt_ret
-    return trng, use_noise, x, x_mask, y, y_mask, opt_ret, cost
+
+    return trng, use_noise, x, x_mask, y, y_factors, y_mask, opt_ret, final_cost
+
 
 
 # build a sampler
@@ -979,7 +1211,7 @@ def augment_raml_data(x, y, tgt_worddict, options):
                     y_sample_weights.append(numpy.exp(y_bleu / options['raml_tau']) / numpy.exp(-edits / options['raml_tau']))
                 else:
                     y_sample_weights = [1.0] * options['raml_samples']
-                    
+
 
             elif options['raml_reward'] == "edit_distance":
                 q = edit_distance_distribution(sentence_length=len(y_c), vocab_size=options['n_words'], tau=options['raml_tau'])
@@ -1095,7 +1327,10 @@ def train(dim_word=512,  # word vector dimensionality
           decoder_truncate_gradient=-1, # Truncate BPTT gradients in the decoder to this value. Use -1 for no truncation
           layer_normalisation=False, # layer normalisation https://arxiv.org/abs/1607.06450
           weight_normalisation=False, # normalize weights
-          interleave_tl=False
+          interleave_tl=False,
+          multiple_decoders_connection_feedback=False,
+          multiple_decoders_connection_state=False
+
     ):
 
     # Model options
@@ -1121,6 +1356,8 @@ def train(dim_word=512,  # word vector dimensionality
         model_options['enc_depth_bidirectional'] = model_options['enc_depth']
     # first layer is always bidirectional; make sure people don't forget to increase enc_depth as well
     assert(model_options['enc_depth_bidirectional'] >= 1 and model_options['enc_depth_bidirectional'] <= model_options['enc_depth'])
+
+    assert( not (model_options['tie_encoder_decoder_embeddings'] and (model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']) ))
 
     if model_options['dec_depth'] > 1 and model_options['decoder'].startswith('lstm') != model_options['decoder_deep'].startswith('lstm'):
         logging.error('cannot mix LSTM and GRU in decoder')
@@ -1259,12 +1496,15 @@ def train(dim_word=512,  # word vector dimensionality
     tparams = init_theano_params(params)
 
     trng, use_noise, \
-        x, x_mask, y, y_mask, \
+        x, x_mask, y, y_factors , y_mask, \
         opt_ret, \
         cost = \
         build_model(tparams, model_options)
 
-    inps = [x, x_mask, y, y_mask]
+    if model_options['multiple_decoders_connection_feedback']:
+        inps = [x, x_mask, y, y_factors, y_mask]
+    else:
+        inps = [x, x_mask, y, y_mask]
 
     if validFreq or sampleFreq:
         logging.info('Building sampler')
@@ -1369,6 +1609,7 @@ def train(dim_word=512,  # word vector dimensionality
 
     valid_err = None
 
+    #TODO: check x,y..
     cost_sum = 0
     cost_batches = 0
     last_disp_samples = 0
@@ -1392,10 +1633,10 @@ def train(dim_word=512,  # word vector dimensionality
                 if model_options['objective'] == 'RAML':
                     x, y, sample_weights = augment_raml_data(x, y, options=model_options,
                                                              tgt_worddict=worddicts[-1])
-                                                            
+
                 else:
                     sample_weights = [1.0] * len(y)
-                
+
                 xlen = len(x)
                 n_samples += xlen
 
@@ -1409,7 +1650,7 @@ def train(dim_word=512,  # word vector dimensionality
                     logging.warning('Minibatch with zero sample under length %d' % maxlen)
                     training_progress.uidx -= 1
                     continue
-                
+
                 cost_batches += 1
                 last_disp_samples += xlen
                 last_words += (numpy.sum(x_mask) + numpy.sum(y_mask))/2.0
@@ -1796,6 +2037,8 @@ if __name__ == '__main__':
     network.add_argument('--decoder_deep', type=str, default='gru',
                          choices=['gru', 'gru_cond', 'lstm'],
                          help='decoder recurrent layer after first one (default: %(default)s)')
+    network.add_argument('--multiple_decoders_connection_feedback', action="store_true")
+    network.add_argument('--multiple_decoders_connection_state', action="store_true")
 
     training = parser.add_argument_group('training parameters')
     training.add_argument('--maxlen', type=int, default=100, metavar='INT',
@@ -1895,6 +2138,9 @@ if __name__ == '__main__':
     # set up logging
     level = logging.INFO
     logging.basicConfig(level=level, format='%(levelname)s: %(message)s')
+
+    if args.multiple_decoders_connection_state and args.multiple_decoders_connection_feedback:
+        print >>sys.stderr, "Error: flags multiple_decoders_connection_state and multiple_decoders_connection_feedback cannot be enabled at the same time"
 
     #print vars(args)
     train(**vars(args))
