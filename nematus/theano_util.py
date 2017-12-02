@@ -2,6 +2,7 @@
 Theano utility functions
 '''
 
+import sys
 import json
 import cPickle as pkl
 import numpy
@@ -11,6 +12,20 @@ import theano
 import theano.tensor as tensor
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
+floatX = theano.config.floatX
+numpy_floatX = numpy.typeDict[floatX]
+
+# float16 warning
+if floatX == 'float16':
+   bad = True
+   try:
+       [major_v, minor_v, sub_v] = map(int, theano.version.short_version.split('.'))
+       # When a version of Theano that supports float16 without bugs is released, add a check here
+   except:
+       pass
+   if bad:
+       print >> sys.stderr, "Warning: float16 may not be fully supported by the current version of Theano"
+
 # push parameters to Theano shared variables
 def zip_to_theano(params, tparams):
     for kk, vv in params.iteritems():
@@ -18,9 +33,11 @@ def zip_to_theano(params, tparams):
 
 
 # pull parameters from Theano shared variables
-def unzip_from_theano(zipped):
+def unzip_from_theano(zipped, excluding_prefix=None):
     new_params = OrderedDict()
     for kk, vv in zipped.iteritems():
+        if excluding_prefix and (kk.startswith(excluding_prefix)):
+            continue
         new_params[kk] = vv.get_value()
     return new_params
 
@@ -42,15 +59,48 @@ def init_theano_params(params):
 
 
 # load parameters
-def load_params(path, params):
-    pp = numpy.load(path)
+def load_params(path, params, with_prefix=''):
+    try:
+        pp = numpy.load(path)
+    except IOError:
+        pp = numpy.load(path + '.npz')
+    new_params = OrderedDict()
     for kk, vv in params.iteritems():
         if kk not in pp:
-            warnings.warn('%s is not in the archive' % kk)
+            logging.warn('%s is not in the archive' % kk)
             continue
-        params[kk] = pp[kk]
+        if kk == "zipped_params":
+            continue
+        new_params[with_prefix+kk] = pp[kk].astype(floatX, copy=False)
 
+    params.update(new_params)
     return params
+
+# load parameters of the optimizer
+def load_optimizer_params(path, optimizer_name):
+    params = {}
+    try:
+        pp = numpy.load(path)
+    except IOError:
+        pp = numpy.load(path + '.npz')
+    for kk in pp:
+        if kk.startswith(optimizer_name):
+            params[kk] = pp[kk].astype(floatX, copy=False)
+    return params
+
+# save model parameters, optimizer parameters and progress
+def save(model_params, optimizer_params, training_progress, base_filename, file_float_type='float32'):
+    if file_float_type != floatX:
+        new_model_params, new_optimizer_params = {}, {}
+        for kk, vv in model_params.iteritems():
+            new_model_params[kk] = vv.astype(file_float_type)
+        for kk, vv in optimizer_params.iteritems():
+            new_optimizer_params[kk] = vv.astype(file_float_type)
+        model_params, optimizer_params = new_model_params, new_optimizer_params
+
+    numpy.savez(base_filename, **model_params)
+    numpy.savez(base_filename + '.gradinfo', **optimizer_params)
+    training_progress.save_to_json(base_filename + '.progress.json')
 
 def tanh(x):
     return tensor.tanh(x)
@@ -112,3 +162,12 @@ def embedding_name(i):
     else:
         return 'Wemb'+str(i)
 
+# Zero out all parameters
+def zero_all(params):
+    for kk, vv in params.iteritems():
+        vv[:] = numpy.zeros_like(vv)
+
+def get_slice(array, n, dim):
+    if array.ndim == 3:
+        return array[:, :, n*dim:(n+1)*dim]
+    return array[:, n*dim:(n+1)*dim]

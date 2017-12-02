@@ -18,13 +18,15 @@ class TextIterator:
                  maxlen=100,
                  n_words_source=-1,
                  n_words_target=-1,
+                 skip_empty=False,
                  shuffle_each_epoch=False,
                  sort_by_length=True,
+                 use_factor=False,
                  maxibatch_size=20):
         if shuffle_each_epoch:
-            shuffle.main([source, target])
-            self.source = fopen(source+'.shuf', 'r')
-            self.target = fopen(target+'.shuf', 'r')
+            self.source_orig = source
+            self.target_orig = target
+            self.source, self.target = shuffle.main([self.source_orig, self.target_orig], temporary=True)
         else:
             self.source = fopen(source, 'r')
             self.target = fopen(target, 'r')
@@ -35,6 +37,8 @@ class TextIterator:
 
         self.batch_size = batch_size
         self.maxlen = maxlen
+        self.skip_empty = skip_empty
+        self.use_factor = use_factor
 
         self.n_words_source = n_words_source
         self.n_words_target = n_words_target
@@ -63,11 +67,12 @@ class TextIterator:
     def __iter__(self):
         return self
 
+    def __len__(self):
+        return sum([1 for _ in self])
+    
     def reset(self):
         if self.shuffle:
-            shuffle.main([self.source.name.replace('.shuf',''), self.target.name.replace('.shuf','')])
-            self.source = fopen(self.source.name, 'r')
-            self.target = fopen(self.target.name, 'r')
+            self.source, self.target = shuffle.main([self.source_orig, self.target_orig], temporary=True)
         else:
             self.source.seek(0)
             self.target.seek(0)
@@ -85,16 +90,24 @@ class TextIterator:
         assert len(self.source_buffer) == len(self.target_buffer), 'Buffer size mismatch!'
 
         if len(self.source_buffer) == 0:
-            for k_ in xrange(self.k):
-                ss = self.source.readline()
-                if ss == "":
-                    break
-                tt = self.target.readline()
-                if tt == "":
+            for ss in self.source:
+                ss = ss.split()
+                tt = self.target.readline().split()
+                
+                if self.skip_empty and (len(ss) == 0 or len(tt) == 0):
+                    continue
+                if len(ss) > self.maxlen or len(tt) > self.maxlen:
+                    continue
+
+                self.source_buffer.append(ss)
+                self.target_buffer.append(tt)
+                if len(self.source_buffer) == self.k:
                     break
 
-                self.source_buffer.append(ss.strip().split())
-                self.target_buffer.append(tt.strip().split())
+            if len(self.source_buffer) == 0 or len(self.target_buffer) == 0:
+                self.end_of_data = False
+                self.reset()
+                raise StopIteration
 
             # sort by target buffer
             if self.sort_by_length:
@@ -111,13 +124,8 @@ class TextIterator:
                 self.source_buffer.reverse()
                 self.target_buffer.reverse()
 
-        if len(self.source_buffer) == 0 or len(self.target_buffer) == 0:
-            self.end_of_data = False
-            self.reset()
-            raise StopIteration
 
         try:
-
             # actual work here
             while True:
 
@@ -128,7 +136,10 @@ class TextIterator:
                     break
                 tmp = []
                 for w in ss:
-                    w = [self.source_dicts[i][f] if f in self.source_dicts[i] else 1 for (i,f) in enumerate(w.split('|'))]
+                    if self.use_factor:
+                        w = [self.source_dicts[i][f] if f in self.source_dicts[i] else 1 for (i,f) in enumerate(w.split('|'))]
+                    else:
+                        w = [self.source_dicts[0][w] if w in self.source_dicts[0] else 1]
                     tmp.append(w)
                 ss = tmp
 
@@ -139,9 +150,6 @@ class TextIterator:
                 if self.n_words_target > 0:
                     tt = [w if w < self.n_words_target else 1 for w in tt]
 
-                if len(ss) > self.maxlen and len(tt) > self.maxlen:
-                    continue
-
                 source.append(ss)
                 target.append(tt)
 
@@ -150,10 +158,5 @@ class TextIterator:
                     break
         except IOError:
             self.end_of_data = True
-
-        if len(source) <= 0 or len(target) <= 0:
-            self.end_of_data = False
-            self.reset()
-            raise StopIteration
 
         return source, target

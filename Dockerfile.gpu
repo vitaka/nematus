@@ -1,4 +1,4 @@
-FROM nvidia/cuda:7.5-cudnn5-devel
+FROM nvidia/cuda:8.0-cudnn5-devel
 MAINTAINER Tom Kocmi <kocmi@ufal.mff.cuni.cz>
 
 # Install git, wget, python-dev, pip and other dependencies
@@ -15,11 +15,12 @@ RUN apt-get update && apt-get install -y \
   python-nose \
   python-numpy \
   python-scipy \
+  python-pygraphviz \
   xml-twig-tools
 
 RUN pip install --upgrade pip
 RUN pip install -U setuptools
-RUN pip install numexpr cython ipdb
+RUN pip install numexpr cython tables bottle bottle-log tornado
 
 # Set CUDA_ROOT
 ENV CUDA_ROOT /usr/local/cuda/bin

@@ -21,18 +21,20 @@ class DomainInterpolatorTextIterator:
                  maxlen=100,
                  n_words_source=-1,
                  n_words_target=-1,
+                 skip_empty=False,
                  shuffle_each_epoch=False,
                  sort_by_length=True,
                  indomain_source='', indomain_target='',
                  interpolation_rate=0.1,
+                 use_factor=False,
                  maxibatch_size=20):
         if shuffle_each_epoch:
-            shuffle.main([source, target])
-            shuffle.main([indomain_source, indomain_target])
-            self.source = fopen(source+'.shuf', 'r')
-            self.target = fopen(target+'.shuf', 'r')
-            self.indomain_source = fopen(indomain_source+'.shuf', 'r')
-            self.indomain_target = fopen(indomain_target+'.shuf', 'r')
+            self.source_orig = source
+            self.target_orig = target
+            self.source, self.target = shuffle.main([self.source_orig, self.target_orig], temporary=True)
+            self.indomain_source_orig = indomain_source
+            self.indomain_target_orig = indomain_target
+            self.indomain_source, self.indomain_target = shuffle.main([self.indomain_source_orig, self.indomain_target_orig], temporary=True)
         else:
             self.source = fopen(source, 'r')
             self.target = fopen(target, 'r')
@@ -45,6 +47,8 @@ class DomainInterpolatorTextIterator:
 
         self.batch_size = batch_size
         self.maxlen = maxlen
+        self.skip_empty = skip_empty
+        self.use_factor = use_factor
 
         self.n_words_source = n_words_source
         self.n_words_target = n_words_target
@@ -70,7 +74,8 @@ class DomainInterpolatorTextIterator:
         self.end_of_data = False
 
         self.interpolation_rate = interpolation_rate
-        self.indomain_k = int(math.ceil(self.interpolation_rate * self.k))
+        self.cur_interpolation_rate = self.interpolation_rate
+        self.indomain_k = int(math.ceil(self.cur_interpolation_rate * self.k))
         self.outdomain_k = self.k - self.indomain_k
 
     def __iter__(self):
@@ -78,18 +83,14 @@ class DomainInterpolatorTextIterator:
 
     def reset(self):
         if self.shuffle:
-            shuffle.main([self.source.name.replace('.shuf',''), self.target.name.replace('.shuf','')])
-            self.source = fopen(self.source.name, 'r')
-            self.target = fopen(self.target.name, 'r')
+            self.source, self.target = shuffle.main([self.source_orig, self.target_orig], temporary=True)
         else:
             self.source.seek(0)
             self.target.seek(0)
 
     def indomain_reset(self):
         if self.shuffle:
-            shuffle.main([self.indomain_source.name.replace('.shuf',''), self.indomain_target.name.replace('.shuf','')])
-            self.indomain_source = fopen(self.indomain_source.name, 'r')
-            self.indomain_target = fopen(self.indomain_target.name, 'r')
+            self.indomain_source, self.indomain_target = shuffle.main([self.indomain_source_orig, self.indomain_target_orig], temporary=True)
         else:
             self.indomain_source.seek(0)
             self.indomain_target.seek(0)
@@ -99,8 +100,8 @@ class DomainInterpolatorTextIterator:
         self.source_buffer = []
         self.target_buffer = []
         # adjust rate
-        self.interpolation_rate = interpolation_rate
-        self.indomain_k = int(math.ceil(self.interpolation_rate * self.k))
+        self.cur_interpolation_rate = interpolation_rate
+        self.indomain_k = int(math.ceil(self.cur_interpolation_rate * self.k))
         self.outdomain_k = self.k - self.indomain_k
         
     def next(self):
@@ -170,7 +171,10 @@ class DomainInterpolatorTextIterator:
                     break
                 tmp = []
                 for w in ss:
-                    w = [self.source_dicts[i][f] if f in self.source_dicts[i] else 1 for (i,f) in enumerate(w.split('|'))]
+                    if self.use_factor:
+                        w = [self.source_dicts[i][f] if f in self.source_dicts[i] else 1 for (i,f) in enumerate(w.split('|'))]
+                    else:
+                        w = [self.source_dicts[0][w] if w in self.source_dicts[0] else 1]
                     tmp.append(w)
                 ss = tmp
 
@@ -183,6 +187,8 @@ class DomainInterpolatorTextIterator:
 
                 if len(ss) > self.maxlen and len(tt) > self.maxlen:
                     continue
+                if self.skip_empty and (not ss or not tt):
+                    continue
 
                 source.append(ss)
                 target.append(tt)
@@ -193,9 +199,8 @@ class DomainInterpolatorTextIterator:
         except IOError:
             self.end_of_data = True
 
-        if len(source) <= 0 or len(target) <= 0:
-            self.end_of_data = False
-            self.reset()
-            #raise StopIteration
+        # all sentence pairs in maxibatch filtered out because of length
+        if len(source) == 0 or len(target) == 0:
+            source, target = self.next()
 
         return source, target
