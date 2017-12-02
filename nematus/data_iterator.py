@@ -22,7 +22,8 @@ class TextIterator:
                  shuffle_each_epoch=False,
                  sort_by_length=True,
                  use_factor=False,
-                 maxibatch_size=20):
+                 maxibatch_size=20,
+                 interleave_tl=False):
         if shuffle_each_epoch:
             self.source_orig = source
             self.target_orig = target
@@ -36,7 +37,9 @@ class TextIterator:
         self.target_dict = load_dict(target_dict)
 
         self.batch_size = batch_size
-        self.maxlen = maxlen
+        self.maxlen_sl = maxlen
+        self.maxlen_tl= maxlen
+        self.interleave_tl=interleave_tl
         self.skip_empty = skip_empty
         self.use_factor = use_factor
 
@@ -60,7 +63,7 @@ class TextIterator:
         self.source_buffer = []
         self.target_buffer = []
         self.k = batch_size * maxibatch_size
-        
+
 
         self.end_of_data = False
 
@@ -69,7 +72,7 @@ class TextIterator:
 
     def __len__(self):
         return sum([1 for _ in self])
-    
+
     def reset(self):
         if self.shuffle:
             self.source, self.target = shuffle.main([self.source_orig, self.target_orig], temporary=True)
@@ -78,6 +81,7 @@ class TextIterator:
             self.target.seek(0)
 
     def next(self):
+        INTERLEAVE_PREFIX="interleaved_"
         if self.end_of_data:
             self.end_of_data = False
             self.reset()
@@ -93,11 +97,20 @@ class TextIterator:
             for ss in self.source:
                 ss = ss.split()
                 tt = self.target.readline().split()
-                
+
                 if self.skip_empty and (len(ss) == 0 or len(tt) == 0):
                     continue
-                if len(ss) > self.maxlen or len(tt) > self.maxlen:
+
+                if len(ss) > self.maxlen_sl:
                     continue
+
+                if self.interleave_tl:
+                    tt_data=[t for t in tt if not t.startswith(INTERLEAVE_PREFIX)]
+                    if len(tt_data) > self.maxlen_tl:
+                        continue
+		else:
+                    if len(tt) > self.maxlen_tl:
+                        continue
 
                 self.source_buffer.append(ss)
                 self.target_buffer.append(tt)

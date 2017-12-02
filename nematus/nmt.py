@@ -41,12 +41,16 @@ from domain_interpolation_data_iterator import DomainInterpolatorTextIterator
 
 # batch preparation
 def prepare_data(seqs_x, seqs_y, weights=None, maxlen=None, n_words_src=30000,
-                 n_words=30000, n_factors=1):
+                 n_words=30000, n_factors=1, interleave_tl=False):
     # x: a list of sentences
     lengths_x = [len(s) for s in seqs_x]
     lengths_y = [len(s) for s in seqs_y]
 
     if maxlen is not None:
+        maxlen_sl=maxlen
+        maxlen_tl=maxlen
+        if interleave_tl:
+            maxlen_tl=maxlen_tl*2
         new_seqs_x = []
         new_seqs_y = []
         new_lengths_x = []
@@ -55,7 +59,7 @@ def prepare_data(seqs_x, seqs_y, weights=None, maxlen=None, n_words_src=30000,
         if weights is None:
             weights = [None] * len(seqs_y) # to make the zip easier
         for l_x, s_x, l_y, s_y, w in zip(lengths_x, seqs_x, lengths_y, seqs_y, weights):
-            if l_x < maxlen and l_y < maxlen:
+            if l_x < maxlen_sl and l_y < maxlen_tl:
                 new_seqs_x.append(s_x)
                 new_lengths_x.append(l_x)
                 new_seqs_y.append(s_y)
@@ -916,7 +920,7 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
         x, x_mask, y, y_mask = prepare_data(x, y,
                                             n_words_src=options['n_words_src'],
                                             n_words=options['n_words'],
-                                            n_factors=options['factors'])
+                                            n_factors=options['factors'],interleave_tl=options["interleave_tl"])
 
         ### in optional save weights mode.
         if alignweights:
@@ -1091,6 +1095,7 @@ def train(dim_word=512,  # word vector dimensionality
           decoder_truncate_gradient=-1, # Truncate BPTT gradients in the decoder to this value. Use -1 for no truncation
           layer_normalisation=False, # layer normalisation https://arxiv.org/abs/1607.06450
           weight_normalisation=False, # normalize weights
+          interleave_tl=False
     ):
 
     # Model options
@@ -1213,7 +1218,7 @@ def train(dim_word=512,  # word vector dimensionality
                          shuffle_each_epoch=shuffle_each_epoch,
                          sort_by_length=sort_by_length,
                          use_factor=(factors > 1),
-                         maxibatch_size=maxibatch_size)
+                         maxibatch_size=maxibatch_size,interleave_tl=interleave_tl)
 
     if valid_datasets and validFreq:
         valid = TextIterator(valid_datasets[0], valid_datasets[1],
@@ -1221,7 +1226,7 @@ def train(dim_word=512,  # word vector dimensionality
                             n_words_source=n_words_src, n_words_target=n_words,
                             batch_size=valid_batch_size,
                             use_factor=(factors>1),
-                            maxlen=maxlen)
+                            maxlen=maxlen,interleave_tl=interleave_tl)
     else:
         valid = None
 
@@ -1398,7 +1403,7 @@ def train(dim_word=512,  # word vector dimensionality
                                                                     maxlen=maxlen,
                                                                     n_factors=factors,
                                                                     n_words_src=n_words_src,
-                                                                    n_words=n_words)
+                                                                    n_words=n_words,interleave_tl=interleave_tl)
 
                 if x is None:
                     logging.warning('Minibatch with zero sample under length %d' % maxlen)
@@ -1433,7 +1438,7 @@ def train(dim_word=512,  # word vector dimensionality
                     # add EOS and prepare factored data
                     x, _, _, _ = prepare_data([x_s], [y_s], maxlen=None,
                                               n_factors=factors,
-                                              n_words_src=n_words_src, n_words=n_words)
+                                              n_words_src=n_words_src, n_words=n_words,interleave_tl=interleave_tl)
 
                     # draw independent samples to compute mean reward
                     if model_options['mrt_samples_meanloss']:
@@ -1478,7 +1483,7 @@ def train(dim_word=512,  # word vector dimensionality
                                                                     maxlen=None,
                                                                     n_factors=factors,
                                                                     n_words_src=n_words_src,
-                                                                    n_words=n_words)
+                                                                    n_words=n_words,interleave_tl=interleave_tl)
 
                     cost_batches += 1
                     last_disp_samples += xlen
@@ -1795,6 +1800,7 @@ if __name__ == '__main__':
     training = parser.add_argument_group('training parameters')
     training.add_argument('--maxlen', type=int, default=100, metavar='INT',
                          help="maximum sequence length (default: %(default)s)")
+    training.add_argument("--interleave_tl",  action="store_true")
     training.add_argument('--optimizer', type=str, default="adam",
                          choices=['adam', 'adadelta', 'rmsprop', 'sgd', 'sgdmomentum'],
                          help="optimizer (default: %(default)s)")
