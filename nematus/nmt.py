@@ -41,7 +41,7 @@ from domain_interpolation_data_iterator import DomainInterpolatorTextIterator
 
 # batch preparation
 def prepare_data(seqs_x, seqs_y, weights=None, maxlen=None, n_words_src=30000,
-                 n_words=30000, n_factors=1, interleave_tl=False):
+                 n_words=30000, n_factors=1, interleave_tl=False, factors_tl=False):
     # x: a list of sentences
     lengths_x = [len(s) for s in seqs_x]
     lengths_y = [len(s) for s in seqs_y]
@@ -83,17 +83,19 @@ def prepare_data(seqs_x, seqs_y, weights=None, maxlen=None, n_words_src=30000,
 
     x = numpy.zeros((n_factors, maxlen_x, n_samples)).astype('int64')
     y = numpy.zeros((maxlen_y, n_samples)).astype('int64')
+    y_factors = numpy.zeros((maxlen_y, n_samples)).astype('int64')
     x_mask = numpy.zeros((maxlen_x, n_samples)).astype(floatX)
     y_mask = numpy.zeros((maxlen_y, n_samples)).astype(floatX)
+    #TODO: here
     for idx, [s_x, s_y] in enumerate(zip(seqs_x, seqs_y)):
         x[:, :lengths_x[idx], idx] = zip(*s_x)
         x_mask[:lengths_x[idx]+1, idx] = 1.
         y[:lengths_y[idx], idx] = s_y
         y_mask[:lengths_y[idx]+1, idx] = 1.
     if weights is not None:
-        return x, x_mask, y, y_mask, weights
+        return x, x_mask, y, y_factors, y_mask, weights
     else:
-        return x, x_mask, y, y_mask
+        return x, x_mask, y, y_factors, y_mask
 
 # initialize all parameters
 def init_params(options):
@@ -1627,6 +1629,10 @@ def train(dim_word=512,  # word vector dimensionality
             if len(x) and len(x[0]) and len(x[0][0]) != factors:
                 logging.error('Mismatch between number of factors in settings ({0}), and number in training corpus ({1})\n'.format(factors, len(x[0][0])))
                 sys.exit(1)
+            if len(y) and len(y[0]) and len(y[0][0]) > 1:
+                if not model_options['multiple_decoders_connection_feedback']:
+                    logging.error('Mismatch between number of TL factors in settings, and number in training corpus ({0})\n'.format(len(y[0][0])))
+                    sys.exit(1)
 
             if model_options['objective'] in ['CE', 'RAML']:
 
@@ -1640,11 +1646,11 @@ def train(dim_word=512,  # word vector dimensionality
                 xlen = len(x)
                 n_samples += xlen
 
-                x, x_mask, y, y_mask, sample_weights = prepare_data(x, y, weights=sample_weights,
+                x, x_mask, y, y_factors, y_mask, sample_weights = prepare_data(x, y, weights=sample_weights,
                                                                     maxlen=maxlen,
                                                                     n_factors=factors,
                                                                     n_words_src=n_words_src,
-                                                                    n_words=n_words,interleave_tl=interleave_tl)
+                                                                    n_words=n_words,interleave_tl=interleave_tl, factors_tl=model_options['multiple_decoders_connection_feedback'])
 
                 if x is None:
                     logging.warning('Minibatch with zero sample under length %d' % maxlen)

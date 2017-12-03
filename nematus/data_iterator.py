@@ -23,7 +23,8 @@ class TextIterator:
                  sort_by_length=True,
                  use_factor=False,
                  maxibatch_size=20,
-                 interleave_tl=False):
+                 interleave_tl=False,
+                 use_factor_tl=False):
         if shuffle_each_epoch:
             self.source_orig = source
             self.target_orig = target
@@ -34,7 +35,10 @@ class TextIterator:
         self.source_dicts = []
         for source_dict in source_dicts:
             self.source_dicts.append(load_dict(source_dict))
-        self.target_dict = load_dict(target_dict)
+        if use_factor_tl:
+            self.target_dict = [load_dict(one_target_dict) for one_target_dict in target_dict ]
+        else:
+            self.target_dict = load_dict(target_dict)
 
         self.batch_size = batch_size
         self.maxlen_sl = maxlen
@@ -53,9 +57,10 @@ class TextIterator:
                         del d[key]
 
         if self.n_words_target > 0:
-                for key, idx in self.target_dict.items():
-                    if idx >= self.n_words_target:
-                        del self.target_dict[key]
+                for d in self.target_dict:
+                    for key, idx in d.items():
+                        if idx >= self.n_words_target:
+                            del d[key]
 
         self.shuffle = shuffle_each_epoch
         self.sort_by_length = sort_by_length
@@ -108,7 +113,7 @@ class TextIterator:
                     tt_data=[t for t in tt if not t.startswith(INTERLEAVE_PREFIX)]
                     if len(tt_data) > self.maxlen_tl:
                         continue
-		else:
+                else:
                     if len(tt) > self.maxlen_tl:
                         continue
 
@@ -158,10 +163,17 @@ class TextIterator:
 
                 # read from source file and map to word index
                 tt = self.target_buffer.pop()
-                tt = [self.target_dict[w] if w in self.target_dict else 1
-                      for w in tt]
-                if self.n_words_target > 0:
-                    tt = [w if w < self.n_words_target else 1 for w in tt]
+                if self.use_factor_tl:
+                    tmp = []
+                    for w in tt:
+                        w = [self.target_dict[i][f] if f in self.target_dict[i] else 1 for (i,f) in enumerate(w.split('|'))]
+                        tmp.append(w)
+                    tt=tmp
+                else:
+                    tt = [self.target_dict[w] if w in self.target_dict else 1
+                          for w in tt]
+                    if self.n_words_target > 0:
+                        tt = [w if w < self.n_words_target else 1 for w in tt]
 
                 source.append(ss)
                 target.append(tt)
