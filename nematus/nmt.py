@@ -1500,7 +1500,7 @@ def train(dim_word=512,  # word vector dimensionality
     if use_domain_interpolation:
         logging.info('Using domain interpolation with initial ratio %s, final ratio %s, increase rate %s' % (training_progress.domain_interpolation_cur, domain_interpolation_max, domain_interpolation_inc))
         train = DomainInterpolatorTextIterator(datasets[0], datasets[1],
-                         dictionaries[:-1], dictionaries[1],
+                         dictionaries[:-1], dictionaries[-1],
                          n_words_source=n_words_src, n_words_target=n_words,
                          batch_size=batch_size,
                          maxlen=maxlen,
@@ -1514,7 +1514,7 @@ def train(dim_word=512,  # word vector dimensionality
                          maxibatch_size=maxibatch_size)
     else:
         train = TextIterator(datasets[0], datasets[1],
-                         dictionaries[:-1], dictionaries[-1],
+                         dictionaries[:-2] if model_options['multiple_decoders_connection_feedback'] else dictionaries[:-1], dictionaries[-2:] if model_options['multiple_decoders_connection_feedback'] else dictionaries[-1],
                          n_words_source=n_words_src, n_words_target=n_words,
                          batch_size=batch_size,
                          maxlen=maxlen,
@@ -1522,15 +1522,15 @@ def train(dim_word=512,  # word vector dimensionality
                          shuffle_each_epoch=shuffle_each_epoch,
                          sort_by_length=sort_by_length,
                          use_factor=(factors > 1),
-                         maxibatch_size=maxibatch_size,interleave_tl=interleave_tl)
+                         maxibatch_size=maxibatch_size,interleave_tl=interleave_tl,use_factor_tl=model_options['multiple_decoders_connection_feedback'])
 
     if valid_datasets and validFreq:
         valid = TextIterator(valid_datasets[0], valid_datasets[1],
-                            dictionaries[:-1], dictionaries[-1],
+                            dictionaries[:-2] if model_options['multiple_decoders_connection_feedback'] else dictionaries[:-1], dictionaries[-2:] if model_options['multiple_decoders_connection_feedback'] else dictionaries[-1],
                             n_words_source=n_words_src, n_words_target=n_words,
                             batch_size=valid_batch_size,
                             use_factor=(factors>1),
-                            maxlen=maxlen,interleave_tl=interleave_tl)
+                            maxlen=maxlen,interleave_tl=interleave_tl,use_factor_tl=model_options['multiple_decoders_connection_feedback'])
     else:
         valid = None
 
