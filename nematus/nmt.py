@@ -106,7 +106,7 @@ def init_params(options):
     if not options['tie_encoder_decoder_embeddings']:
         params = get_layer_param('embedding')(options, params, options['n_words'], options['dim_word'], suffix='_dec')
         if options['multiple_decoders_connection_feedback']:
-            params = get_layer_param('embedding')(options, params, options['n_words_factor1'], options['dim_word_factor1'], suffix='_dec_factor1')
+            params = get_layer_param('embedding')(options, params, options['n_words_factor1'], options['dim_word'], suffix='_dec_factor1')
 
 
     # encoder: bidirectional RNN
