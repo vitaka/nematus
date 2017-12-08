@@ -161,7 +161,7 @@ class TextIterator:
                     tmp.append(w)
                 ss = tmp
 
-                # read from source file and map to word index
+                # read from target file and map to word index
                 tt = self.target_buffer.pop()
                 if self.use_factor_tl:
                     tmp = []

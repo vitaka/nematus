@@ -86,11 +86,11 @@ def prepare_data(seqs_x, seqs_y, weights=None, maxlen=None, n_words_src=30000,
     y_factors = numpy.zeros((maxlen_y, n_samples)).astype('int64')
     x_mask = numpy.zeros((maxlen_x, n_samples)).astype(floatX)
     y_mask = numpy.zeros((maxlen_y, n_samples)).astype(floatX)
-    #TODO: here
     for idx, [s_x, s_y] in enumerate(zip(seqs_x, seqs_y)):
         x[:, :lengths_x[idx], idx] = zip(*s_x)
         x_mask[:lengths_x[idx]+1, idx] = 1.
-        y[:lengths_y[idx], idx] = s_y
+        y[:lengths_y[idx], idx] =  [ w[0] for w in s_y]
+        y_factors[:lengths_y[idx], idx] = [ w[1] for w in s_y]
         y_mask[:lengths_y[idx]+1, idx] = 1.
     if weights is not None:
         return x, x_mask, y, y_factors, y_mask, weights
@@ -158,6 +158,11 @@ def init_params(options):
         # init_state, init_cell
         params = get_layer_param('ff')(options, params, prefix='ff_state_factor1',
                                     nin=ctxdim, nout=dec_state)
+
+        #Feedback to the decoders
+        params = get_layer_param('ff')(options, params, prefix='feedback_fs',nin=options['dim_word']*2, nout=options['dim_word'])
+        params = get_layer_param('ff')(options, params, prefix='feedback_factors',nin=options['dim_word']*2, nout=options['dim_word'])
+
 
     # decoder
     params = get_layer_param(options['decoder'])(options, params,
@@ -534,14 +539,27 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
         emb_shifted = tensor.zeros_like(emb)
         emb_shifted = tensor.set_subtensor(emb_shifted[1:], emb[:-1])
         emb = emb_shifted
+
         emb_factors_shifted = tensor.zeros_like(emb_factors)
         emb_factors_shifted = tensor.set_subtensor(emb_factors_shifted[1:], emb_factors[:-1])
+
+        emb_factors_unshifted=tensor.zeros_like(emb_factors)
+
+        emb_factors_unshifted = tensor.set_subtensor(emb_factors_unshifted[:], emb_factors[:])
+
         emb_factors = emb_factors_shifted
+
+
+        #Build feedback to surface form decoder (tanh over concatenation)
+        emb_for_fs_dec= get_layer_constr('ff')(tparams, concatenate(emb,emb_factors_unshifted), options, dropout, prefix='feedback_fs')
+
+        #Build feedback to MSD decoder
+        emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate(emb,emb_factors), options, dropout, prefix='feedback_factors')
 
 
     #TODO: loop over different dropouts? and pctx_?
     return_list=[]
-    for factor_suffix,emb,init_state,y, opt_ret in [ ['',emb,init_state,y,opt_ret] ,['_factor1',emb_factors,init_state_factors,y_factors,opt_ret_factors] ]:
+    for factor_suffix,emb,init_state,y, opt_ret in [ ['',emb_for_fs_dec,init_state,y,opt_ret] ,['_factor1',emb_for_factors_dec,init_state_factors,y_factors,opt_ret_factors] ]:
         # decoder - pass through the decoder conditional gru with attention
         proj = get_layer_constr(options['decoder'])(tparams, emb, options, dropout,
                                                 prefix='decoder'+factor_suffix,
@@ -750,9 +768,25 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     if options['dec_depth'] > 1:
         init_state = tensor.tile(init_state, (options['dec_depth'], 1, 1))
 
+    if options['multiple_decoders_connection_feedback']:
+        # initial decoder state for the factors decoder, TODO: dropout?
+        init_state_factors = get_layer_constr('ff')(tparams, ctx_mean, options, dropout,
+                                        dropout_probability=options['dropout_hidden'],
+                                        prefix='ff_state_factor1', activ='tanh')
+
+        # every decoder RNN layer gets its own copy of the init state
+        init_state_factors = init_state_factors.reshape([1, init_state.shape[0], init_state.shape[1]])
+        if options['dec_depth'] > 1:
+            init_state_factors = tensor.tile(init_state_factors, (options['dec_depth'], 1, 1))
+
     logging.info('Building f_init...')
-    outs = [init_state, ctx]
-    f_init = theano.function([x], outs, name='f_init', profile=profile)
+
+    if options['multiple_decoders_connection_feedback']:
+        outs = [init_state, init_state_factors, ctx]
+        f_init = theano.function([x], outs, name='f_init', profile=profile)
+    else:
+        outs = [init_state, ctx]
+        f_init = theano.function([x], outs, name='f_init', profile=profile)
     logging.info('Done')
 
     # x: 1 x 1
@@ -763,7 +797,15 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     if theano.config.compute_test_value != 'off':
         init_state.tag.test_value = numpy.random.rand(*init_state_old.tag.test_value.shape).astype(floatX)
 
-    logit, opt_ret, ret_state = build_decoder(tparams, options, y, ctx, init_state, dropout, x_mask=None, y_mask=None, sampling=True)
+    if options['multiple_decoders_connection_feedback']:
+        y_factors = tensor.vector('y_factors_sampler', dtype='int64')
+        init_state_factors_old = init_state_factors
+        init_state_factors = tensor.tensor3('init_state_factors', dtype=floatX)
+
+    if options['multiple_decoders_connection_feedback']:
+        logit, opt_ret, ret_state, logit_factors, opt_ret_factors, ret_state_factors = build_decoders_connection_feedback(tparams, options, y, y_factors , ctx, init_state, init_state_factors , dropout, x_mask=None, y_mask=None, sampling=True)
+    else:
+        logit, opt_ret, ret_state = build_decoder(tparams, options, y, ctx, init_state, dropout, x_mask=None, y_mask=None, sampling=True)
 
     # compute the softmax probability
     next_probs = tensor.nnet.softmax(logit)
@@ -771,11 +813,22 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     # sample from softmax distribution to get the sample
     next_sample = trng.multinomial(pvals=next_probs).argmax(1)
 
+    if options['multiple_decoders_connection_feedback']:
+        # compute the softmax probability
+        next_probs_factors = tensor.nnet.softmax(logit_factors)
+
+        # sample from softmax distribution to get the sample
+        next_sample_factors = trng.multinomial(pvals=next_probs_factors).argmax(1)
+
     # compile a function to do the whole thing above, next word probability,
     # sampled word for the next target, next hidden state to be used
     logging.info('Building f_next..')
     inps = [y, ctx, init_state]
     outs = [next_probs, next_sample, ret_state]
+
+    if options['multiple_decoders_connection_feedback']:
+        inps.append(init_state_factors)
+        outs.extend([next_probs_factors, next_sample_factors, ret_state_factors])
 
     if return_alignment:
         outs.append(opt_ret['dec_alphas'])
@@ -1148,21 +1201,31 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
         if len(x[0][0]) != options['factors']:
             logging.error('Mismatch between number of factors in settings ({0}), and number in validation corpus ({1})\n'.format(options['factors'], len(x[0][0])))
             sys.exit(1)
+        if len(y) and len(y[0]) and len(y[0][0]) > 1:
+            if not model_options['multiple_decoders_connection_feedback']:
+                logging.error('Mismatch between number of TL factors in settings, and number in training corpus ({0})\n'.format(len(y[0][0])))
+                sys.exit(1)
 
         n_done += len(x)
 
-        x, x_mask, y, y_mask = prepare_data(x, y,
+        x, x_mask, y, y_factors, y_mask = prepare_data(x, y,
                                             n_words_src=options['n_words_src'],
                                             n_words=options['n_words'],
-                                            n_factors=options['factors'],interleave_tl=options["interleave_tl"])
+                                            n_factors=options['factors'],interleave_tl=options["interleave_tl"], factors_tl=model_options['multiple_decoders_connection_feedback'])
 
         ### in optional save weights mode.
         if alignweights:
-            pprobs, attention = f_log_probs(x, x_mask, y, y_mask)
+            if model_options['multiple_decoders_connection_feedback']:
+                pprobs, attention = f_log_probs(x, x_mask, y, y_factors, y_mask)
+            else:
+                pprobs, attention = f_log_probs(x, x_mask, y, y_mask)
             for jdata in get_alignments(attention, x_mask, y_mask):
                 alignments_json.append(jdata)
         else:
-            pprobs = f_log_probs(x, x_mask, y, y_mask)
+            if model_options['multiple_decoders_connection_feedback']:
+                pprobs = f_log_probs(x, x_mask, y, y_factors,y_mask)
+            else:
+                pprobs = f_log_probs(x, x_mask, y, y_mask)
 
         # normalize scores according to output length
         if normalization_alpha:
@@ -1360,6 +1423,8 @@ def train(dim_word=512,  # word vector dimensionality
     assert(model_options['enc_depth_bidirectional'] >= 1 and model_options['enc_depth_bidirectional'] <= model_options['enc_depth'])
 
     assert( not (model_options['tie_encoder_decoder_embeddings'] and (model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']) ))
+
+    assert(not (model_options['objective'] != "CE" and (model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']) ) )
 
     if model_options['dec_depth'] > 1 and model_options['decoder'].startswith('lstm') != model_options['decoder_deep'].startswith('lstm'):
         logging.error('cannot mix LSTM and GRU in decoder')
@@ -1611,7 +1676,6 @@ def train(dim_word=512,  # word vector dimensionality
 
     valid_err = None
 
-    #TODO: check x,y..
     cost_sum = 0
     cost_batches = 0
     last_disp_samples = 0
@@ -1665,7 +1729,10 @@ def train(dim_word=512,  # word vector dimensionality
                 if model_options['objective'] == 'RAML':
                     cost = f_update(lrate, x, x_mask, y, y_mask, sample_weights)
                 else:
-                    cost = f_update(lrate, x, x_mask, y, y_mask)
+                    if model_options['multiple_decoders_connection_feedback']:
+                        cost = f_update(lrate, x, x_mask, y, y_factors, y_mask)
+                    else:
+                        cost = f_update(lrate, x, x_mask, y, y_mask)
 
                 cost_sum += cost
 
