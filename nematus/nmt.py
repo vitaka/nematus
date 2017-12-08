@@ -551,10 +551,10 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
 
 
         #Build feedback to surface form decoder (tanh over concatenation)
-        emb_for_fs_dec= get_layer_constr('ff')(tparams, concatenate(emb,emb_factors_unshifted), options, dropout, prefix='feedback_fs')
+        emb_for_fs_dec= get_layer_constr('ff')(tparams, concatenate([emb,emb_factors_unshifted]), options, dropout, prefix='feedback_fs')
 
         #Build feedback to MSD decoder
-        emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate(emb,emb_factors), options, dropout, prefix='feedback_factors')
+        emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb,emb_factors]), options, dropout, prefix='feedback_factors')
 
 
     #TODO: loop over different dropouts? and pctx_?
