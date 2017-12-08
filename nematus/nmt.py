@@ -175,7 +175,7 @@ def init_params(options):
     if options['multiple_decoders_connection_feedback']:
         params = get_layer_param(options['decoder'])(options, params,
                                                   prefix='decoder_factor1',
-                                                  nin=options['dim_word_factor1'],
+                                                  nin=options['dim_word'],
                                                   dim=options['dim'],
                                                   dimctx=ctxdim,
                                                   recurrence_transition_depth=options['dec_base_recurrence_transition_depth'])
@@ -220,17 +220,17 @@ def init_params(options):
                                 followed_by_softmax=True)
     if options['multiple_decoders_connection_feedback']:
         params = get_layer_param('ff')(options, params, prefix='ff_logit_lstm_factor1',
-                                    nin=options['dim'], nout=options['dim_word_factor1'],
+                                    nin=options['dim'], nout=options['dim_word'],
                                     ortho=False)
         params = get_layer_param('ff')(options, params, prefix='ff_logit_prev_factor1',
-                                    nin=options['dim_word_factor1'],
-                                    nout=options['dim_word_factor1'], ortho=False)
+                                    nin=options['dim_word'],
+                                    nout=options['dim_word'], ortho=False)
         params = get_layer_param('ff')(options, params, prefix='ff_logit_ctx_factor1',
-                                    nin=ctxdim, nout=options['dim_word_factor1'],
+                                    nin=ctxdim, nout=options['dim_word'],
                                     ortho=False)
 
         params = get_layer_param('ff')(options, params, prefix='ff_logit_factor1',
-                                    nin=options['dim_word_factor1'],
+                                    nin=options['dim_word'],
                                     nout=options['n_words_factor1'],
                                     weight_matrix = not options['tie_decoder_embeddings'],
                                     followed_by_softmax=True)
@@ -533,7 +533,7 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
             tensor.zeros((1, options['dim_word'])),
             emb)
         emb_factors = tensor.switch(y[:, None] < 0,
-            tensor.zeros((1, options['dim_word_factor1'])),
+            tensor.zeros((1, options['dim_word'])),
             emb_factors)
     else:
         emb_shifted = tensor.zeros_like(emb)
@@ -1338,6 +1338,7 @@ def train(dim_word=512,  # word vector dimensionality
           lrate=0.0001,  # learning rate
           n_words_src=None,  # source vocabulary size
           n_words=None,  # target vocabulary size
+          n_words_factor1=None,  # target vocabulary size
           maxlen=100,  # maximum length of the description
           optimizer='adam',
           batch_size=16,
@@ -1410,6 +1411,7 @@ def train(dim_word=512,  # word vector dimensionality
 
     if model_options['multiple_decoders_connection_feedback']:
         assert(len(dictionaries) == factors + 2)
+        assert(model_options['n_words_factor1'] != None)
     else:
         assert(len(dictionaries) == factors + 1) # one dictionary per source factor + 1 for target factor
     assert(len(model_options['dim_per_factor']) == factors) # each factor embedding has its own dimensionality
@@ -2065,6 +2067,8 @@ if __name__ == '__main__':
                          help="source vocabulary size (default: %(default)s)")
     network.add_argument('--n_words', type=int, default=None, metavar='INT',
                          help="target vocabulary size (default: %(default)s)")
+    network.add_argument('--n_words_factor1', type=int, default=None, metavar='INT',
+                                              help="target vocabulary size for additinoal factor (default: %(default)s)")
     network.add_argument('--enc_depth', type=int, default=1, metavar='INT',
                          help="number of encoder layers (default: %(default)s)")
     network.add_argument('--dec_depth', type=int, default=1, metavar='INT',
