@@ -1408,7 +1408,10 @@ def train(dim_word=512,  # word vector dimensionality
             logging.error('Error: if using factored input, you must specify \'dim_per_factor\'\n')
             sys.exit(1)
 
-    assert(len(dictionaries) == factors + 1) # one dictionary per source factor + 1 for target factor
+    if model_options['multiple_decoders_connection_feedback']:
+        assert(len(dictionaries) == factors + 2)
+    else:
+        assert(len(dictionaries) == factors + 1) # one dictionary per source factor + 1 for target factor
     assert(len(model_options['dim_per_factor']) == factors) # each factor embedding has its own dimensionality
     assert(sum(model_options['dim_per_factor']) == model_options['dim_word']) # dimensionality of factor embeddings sums up to total dimensionality of input embedding vector
     assert(prior_model != None and (os.path.exists(prior_model)) or (map_decay_c==0.0)) # MAP training requires a prior model file: Use command-line option --prior_model
