@@ -563,15 +563,15 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
 
     #TODO: loop over different dropouts? and pctx_?
     return_list=[]
-    for factor_suffix,emb,init_state,y, opt_ret in [ ['',emb_for_fs_dec,init_state,y,opt_ret] ,['_factor1',emb_for_factors_dec,init_state_factors,y_factors,opt_ret_factors] ]:
+    for factor_suffix,emb_local,init_state_local,y_local, opt_ret_local in [ ['',emb_for_fs_dec,init_state,y,opt_ret] ,['_factor1',emb_for_factors_dec,init_state_factors,y_factors,opt_ret_factors] ]:
         # decoder - pass through the decoder conditional gru with attention
-        proj = get_layer_constr(options['decoder'])(tparams, emb, options, dropout,
+        proj = get_layer_constr(options['decoder'])(tparams, emb_local, options, dropout,
                                                 prefix='decoder'+factor_suffix,
                                                 mask=y_mask, context=ctx,
                                                 context_mask=x_mask,
                                                 pctx_=pctx_,
                                                 one_step=one_step,
-                                                init_state=init_state[0],
+                                                init_state=init_state_local[0],
                                                 recurrence_transition_depth=options['dec_base_recurrence_transition_depth'],
                                                 dropout_probability_below=options['dropout_embedding'],
                                                 dropout_probability_ctx=options['dropout_hidden'],
@@ -585,7 +585,7 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
         ctxs = proj[1]
 
         # weights (alignment matrix)
-        opt_ret['dec_alphas'] = proj[2]
+        opt_ret_local['dec_alphas'] = proj[2]
 
         # we return state of each layer
         if sampling:
@@ -616,7 +616,7 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
                                                   context_mask=x_mask,
                                                   pctx_=None, #TODO: we can speed up sampler by precomputing this
                                                   one_step=one_step,
-                                                  init_state=init_state[level-1],
+                                                  init_state=init_state_local[level-1],
                                                   dropout_probability_below=options['dropout_hidden'],
                                                   dropout_probability_rec=options['dropout_hidden'],
                                                   recurrence_transition_depth=options['dec_high_recurrence_transition_depth'],
@@ -648,7 +648,7 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
         logit_lstm = get_layer_constr('ff')(tparams, next_state, options, dropout,
                                         dropout_probability=options['dropout_hidden'],
                                         prefix='ff_logit_lstm'+factor_suffix, activ='linear')
-        logit_prev = get_layer_constr('ff')(tparams, emb, options, dropout,
+        logit_prev = get_layer_constr('ff')(tparams, emb_local, options, dropout,
                                         dropout_probability=options['dropout_embedding'],
                                         prefix='ff_logit_prev'+factor_suffix, activ='linear')
         logit_ctx = get_layer_constr('ff')(tparams, ctxs, options, dropout,
@@ -661,7 +661,7 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
         logit = get_layer_constr('ff')(tparams, logit, options, dropout,
                                 dropout_probability=options['dropout_hidden'],
                                 prefix='ff_logit'+factor_suffix, activ='linear', W=logit_W, followed_by_softmax=True)
-        return_list.extend([logit, opt_ret, ret_state])
+        return_list.extend([logit, opt_ret_local, ret_state])
 
     return return_list
 
