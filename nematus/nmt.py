@@ -676,7 +676,7 @@ def build_model(tparams, options):
     x_mask = tensor.matrix('x_mask', dtype=floatX)
     y = tensor.matrix('y', dtype='int64')
     if ['multiple_decoders_connection_feedback']:
-        y_factors = tensor.matrix('y', dtype='int64')
+        y_factors = tensor.matrix('y_factors', dtype='int64')
     else:
         y_factors=None
     y_mask = tensor.matrix('y_mask', dtype=floatX)
