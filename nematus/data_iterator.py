@@ -63,7 +63,7 @@ class TextIterator:
                         if idx >= self.n_words_target:
                             del d[key]
             else:
-                for key, idx in self.target_dict:
+                for key, idx in self.target_dict.items():
                     if idx >= self.n_words_target:
                         del self.target_dict[key]
 
