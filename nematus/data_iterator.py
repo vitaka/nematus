@@ -57,10 +57,15 @@ class TextIterator:
                         del d[key]
 
         if self.n_words_target > 0:
+            if use_factor_tl:
                 for d in self.target_dict:
                     for key, idx in d.items():
                         if idx >= self.n_words_target:
                             del d[key]
+            else:
+                for key, idx in self.target_dict:
+                    if idx >= self.n_words_target:
+                        del self.target_dict[key]
 
         self.shuffle = shuffle_each_epoch
         self.sort_by_length = sort_by_length

@@ -514,9 +514,6 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
             target_dropout = dropout((n_timesteps_trg, n_samples, 1), options['dropout_target'])
             target_dropout = tensor.tile(target_dropout, (1, 1, options['dim_word']))
 
-    #TODO: think about how to shift sequence, and mix feedback from factors and surface forms
-
-
     # word embedding (target), we will shift the target sequence one time step
     # to the right. This is done because of the bi-gram connections in the
     # readout and decoder rnn. The first target will be all zeros and we will
