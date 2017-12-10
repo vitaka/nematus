@@ -713,7 +713,7 @@ def build_model(tparams, options):
                                         prefix='ff_state_factor1', activ='tanh')
 
         # every decoder RNN layer gets its own copy of the init state
-        init_state_factors = init_state_factors.reshape([1, init_state.shape[0], init_state.shape[1]])
+        init_state_factors = init_state_factors.reshape([1, init_state_factors.shape[0], init_state_factors.shape[1]])
         if options['dec_depth'] > 1:
             init_state_factors = tensor.tile(init_state_factors, (options['dec_depth'], 1, 1))
 
