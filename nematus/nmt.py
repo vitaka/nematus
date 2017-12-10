@@ -741,7 +741,8 @@ def build_model(tparams, options):
         cost_factors = -tensor.log(probs.flatten()[y_flat_idx])
         cost_factors = cost_factors.reshape([y_factors.shape[0], y_factors.shape[1]])
         cost_factors = (cost_factors * y_mask).sum(0)
-        final_cost=cost+cost_factors
+        #final_cost=cost+cost_factors
+        final_cost=cost
     else:
         final_cost=cost
 
