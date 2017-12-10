@@ -1699,7 +1699,7 @@ def train(dim_word=512,  # word vector dimensionality
             if len(x) and len(x[0]) and len(x[0][0]) != factors:
                 logging.error('Mismatch between number of factors in settings ({0}), and number in training corpus ({1})\n'.format(factors, len(x[0][0])))
                 sys.exit(1)
-            if len(y) and len(y[0]) and len(y[0][0]) > 1:
+            if len(y) and len(y[0]) and not isinstance(y[0][0], (int, long)) and len(y[0][0]) > 1:
                 if not model_options['multiple_decoders_connection_feedback']:
                     logging.error('Mismatch between number of TL factors in settings, and number in training corpus ({0})\n'.format(len(y[0][0])))
                     sys.exit(1)
