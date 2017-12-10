@@ -44,6 +44,7 @@ class TextIterator:
         self.maxlen_sl = maxlen
         self.maxlen_tl= maxlen
         self.interleave_tl=interleave_tl
+        self.use_factor_tl=use_factor_tl
         self.skip_empty = skip_empty
         self.use_factor = use_factor
 
