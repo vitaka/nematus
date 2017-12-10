@@ -563,7 +563,8 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
 
     #TODO: loop over different dropouts? and pctx_?
     return_list=[]
-    for factor_suffix,emb_local,init_state_local,y_local, opt_ret_local in [ ['',emb_for_fs_dec,init_state,y,opt_ret] ,['_factor1',emb_for_factors_dec,init_state_factors,y_factors,opt_ret_factors] ]:
+    #for factor_suffix,emb_local,init_state_local,y_local, opt_ret_local in [ ['',emb_for_fs_dec,init_state,y,opt_ret] ,['_factor1',emb_for_factors_dec,init_state_factors,y_factors,opt_ret_factors] ]:
+    for factor_suffix,emb_local,init_state_local,y_local, opt_ret_local in [ ['',emb,init_state,y,opt_ret] ,['_factor1',emb_factors,init_state_factors,y_factors,opt_ret_factors] ]:
         # decoder - pass through the decoder conditional gru with attention
         proj = get_layer_constr(options['decoder'])(tparams, emb_local, options, dropout,
                                                 prefix='decoder'+factor_suffix,
