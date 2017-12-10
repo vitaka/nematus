@@ -89,8 +89,11 @@ def prepare_data(seqs_x, seqs_y, weights=None, maxlen=None, n_words_src=30000,
     for idx, [s_x, s_y] in enumerate(zip(seqs_x, seqs_y)):
         x[:, :lengths_x[idx], idx] = zip(*s_x)
         x_mask[:lengths_x[idx]+1, idx] = 1.
-        y[:lengths_y[idx], idx] =  [ w[0] for w in s_y]
-        y_factors[:lengths_y[idx], idx] = [ w[1] for w in s_y]
+        if factors_tl:
+            y[:lengths_y[idx], idx] =  [ w[0] for w in s_y]
+            y_factors[:lengths_y[idx], idx] = [ w[1] for w in s_y]
+        else:
+            y[:lengths_y[idx], idx] = s_y
         y_mask[:lengths_y[idx]+1, idx] = 1.
     if weights is not None:
         return x, x_mask, y, y_factors, y_mask, weights
