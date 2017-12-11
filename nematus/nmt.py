@@ -494,8 +494,6 @@ def build_decoder(tparams, options, y, ctx, init_state, dropout, x_mask=None, y_
 
 # RNN decoder (including embedding and feedforward layer before output)
 #TODO: duplicate dropout?
-#TODO: define embedding layer embedding_dec_factor1
-#define parameter dim_word_factor1, n_words_factor1
 #TODO: careful about pctx_ parameter
 def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init_state, init_state_factors, dropout, x_mask=None, y_mask=None, sampling=False, pctx_=None, shared_vars=None):
     opt_ret = dict()
@@ -523,7 +521,7 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
     # not condition on the last output.
     decoder_embedding_suffix = '' if options['tie_encoder_decoder_embeddings'] else '_dec'
     emb = get_layer_constr('embedding')(tparams, y, suffix=decoder_embedding_suffix)
-    emb_factors = get_layer_constr('embedding')(tparams, y,suffix=decoder_embedding_suffix+'_factor1')
+    emb_factors = get_layer_constr('embedding')(tparams, y_factors,suffix=decoder_embedding_suffix+'_factor1')
     if options['use_dropout']:
         emb *= target_dropout
         emb_factors *= target_dropout #TODO: duplicate?
