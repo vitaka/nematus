@@ -827,7 +827,10 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     # compile a function to do the whole thing above, next word probability,
     # sampled word for the next target, next hidden state to be used
     logging.info('Building f_next..')
-    inps = [y, ctx, init_state]
+    inps = [y]
+    if options['multiple_decoders_connection_feedback']:
+        inps.append(y_factors)
+    inps.extend([ ctx, init_state])
     outs = [next_probs, next_sample, ret_state]
 
     if options['multiple_decoders_connection_feedback']:
