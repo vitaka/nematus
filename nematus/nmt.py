@@ -534,10 +534,10 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
             tensor.zeros((1, options['dim_word'])),
             emb_factors)
         #Build feedback to surface form decoder (tanh over concatenation)
-        emb_for_fs_dec= get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=2), options, dropout, prefix='feedback_fs')
+        emb_for_fs_dec= get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=1), options, dropout, prefix='feedback_fs')
 
         #Build feedback to MSD decoder
-        emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=2), options, dropout, prefix='feedback_factors')
+        emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=1), options, dropout, prefix='feedback_factors')
     else:
         emb_shifted = tensor.zeros_like(emb)
         emb_shifted = tensor.set_subtensor(emb_shifted[1:], emb[:-1])
