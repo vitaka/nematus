@@ -786,7 +786,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     logging.info('Building f_init...')
 
     if options['multiple_decoders_connection_feedback']:
-        outs = [init_state, init_state_factors, ctx]
+        outs = [init_state, ctx, init_state_factors]
         f_init = theano.function([x], outs, name='f_init', profile=profile)
     else:
         outs = [init_state, ctx]
@@ -833,17 +833,21 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     inps.extend([ ctx, init_state])
     outs = [next_probs, next_sample, ret_state]
 
-    if options['multiple_decoders_connection_feedback']:
-        inps.append(init_state_factors)
-        outs.extend([next_probs_factors, next_sample_factors, ret_state_factors])
-
     if return_alignment:
         outs.append(opt_ret['dec_alphas'])
 
     f_next = theano.function(inps, outs, name='f_next', profile=profile)
     logging.info('Done')
 
-    return f_init, f_next
+    f_next_factors=None
+    if options['multiple_decoders_connection_feedback']:
+        inps=[y,y_factors,ctx,init_state_factors]
+        outs=[next_probs_factors, next_sample_factors, ret_state_factors]
+        if return_alignment:
+            outs.append(opt_ret_factors['dec_alphas'])
+        f_next_factors=theano.function(inps, outs, name='f_next_factors', profile=profile)
+
+    return f_init, f_next, f_next_factors
 
 
 # minimum risk cost
@@ -977,7 +981,7 @@ def build_full_sampler(tparams, options, use_noise, trng, greedy=False):
 # this function iteratively calls f_init and f_next functions.
 def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                stochastic=True, argmax=False, return_alignment=False, suppress_unk=False,
-               return_hyp_graph=False):
+               return_hyp_graph=False, fs_next_factors=None):
 
     # k is the beam size we have
     if k > 1 and argmax:
@@ -1587,7 +1591,7 @@ def train(dim_word=512,  # word vector dimensionality
 
     if validFreq or sampleFreq:
         logging.info('Building sampler')
-        f_init, f_next = build_sampler(tparams, model_options, use_noise, trng)
+        f_init, f_next, f_next_factors = build_sampler(tparams, model_options, use_noise, trng)
     if model_options['objective'] == 'MRT':
         logging.info('Building MRT sampler')
         f_sampler = build_full_sampler(tparams, model_options, use_noise, trng)

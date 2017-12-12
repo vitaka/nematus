@@ -238,6 +238,7 @@ class Translator(object):
 
         fs_init = []
         fs_next = []
+        fs_next_factors= []
 
         for model, option in zip(self._models, self._options):
             param_list = numpy.load(model).files
@@ -247,13 +248,14 @@ class Translator(object):
             tparams = init_theano_params(params)
 
             # always return alignment at this point
-            f_init, f_next = build_sampler(
+            f_init, f_next, f_next_factors = build_sampler(
                 tparams, option, use_noise, trng, return_alignment=True)
 
             fs_init.append(f_init)
             fs_next.append(f_next)
+            fs_next_factors.append(f_next_factors)
 
-        return trng, fs_init, fs_next, gen_sample
+        return trng, fs_init, fs_next, fs_next_factors, gen_sample
 
     def _set_device(self, device_id):
         """
@@ -294,7 +296,7 @@ class Translator(object):
         the parent process.
         """
         # load theano functionality
-        trng, fs_init, fs_next, gen_sample = self._load_models(process_id, device_id)
+        trng, fs_init, fs_next, fs_next_factors, gen_sample = self._load_models(process_id, device_id)
 
         # listen to queue in while loop, translate items
         while True:
@@ -305,12 +307,12 @@ class Translator(object):
             idx = input_item.idx
             request_id = input_item.request_id
 
-            output_item = self._translate(process_id, input_item, trng, fs_init, fs_next, gen_sample)
+            output_item = self._translate(process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample)
             self._output_queue.put((request_id, idx, output_item))
 
         return
 
-    def _translate(self, process_id, input_item, trng, fs_init, fs_next, gen_sample):
+    def _translate(self, process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample):
         """
         Actual translation (model sampling).
         """
@@ -324,7 +326,7 @@ class Translator(object):
         logging.debug('{0} - {1}\n'.format(process_id, idx))
 
         # sample given an input sequence and obtain scores
-        sample, score, word_probs, alignment, hyp_graph = self._sample(input_item, trng, fs_init, fs_next, gen_sample)
+        sample, score, word_probs, alignment, hyp_graph = self._sample(input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample)
 
         # normalize scores according to sequence lengths
         if normalization_alpha:
@@ -340,7 +342,7 @@ class Translator(object):
 
         return output_item
 
-    def _sample(self, input_item, trng, fs_init, fs_next, gen_sample):
+    def _sample(self, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample):
         """
         Sample from model.
         """
@@ -364,7 +366,7 @@ class Translator(object):
                           stochastic=False, argmax=False,
                           return_alignment=return_alignment,
                           suppress_unk=suppress_unk,
-                          return_hyp_graph=return_hyp_graph)
+                          return_hyp_graph=return_hyp_graph, fs_next_factors=fs_next_factors)
 
 
     ### WRITING TO AND READING FROM QUEUES ###
