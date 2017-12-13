@@ -981,7 +981,7 @@ def build_full_sampler(tparams, options, use_noise, trng, greedy=False):
 # this function iteratively calls f_init and f_next functions.
 def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                stochastic=True, argmax=False, return_alignment=False, suppress_unk=False,
-               return_hyp_graph=False, fs_next_factors=None):
+               return_hyp_graph=False, fs_next_factors=None, alternate_factors_fs=False):
 
     # k is the beam size we have
     if k > 1 and argmax:
@@ -1017,6 +1017,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
     # for each model in the ensemble
     num_models = len(f_init)
     next_state = [None]*num_models
+    next_state_factors = [None]*num_models
     ctx0 = [None]*num_models
     next_p = [None]*num_models
     dec_alphas = [None]*num_models
@@ -1028,18 +1029,140 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
         ret[0] = numpy.transpose(ret[0], (1,0,2))
 
         next_state[i] = numpy.tile( ret[0] , (live_k, 1, 1))
+        next_state_factors[i] = numpy.tile( ret[0] , (live_k, 1, 1))
         ctx0[i] = ret[1]
-    next_w = -1 * numpy.ones((live_k,)).astype('int64')  # bos indicator
+
+    next_w = -1 * numpy.ones((live_k,)).astype('int64')
+    next_w_factors = -1 * numpy.ones((live_k,)).astype('int64')   # bos indicator
 
     # x is a sequence of word ids followed by 0, eos id
     for ii in xrange(maxlen):
+        #First do all the operations with factors, then with surface forms
+        ## START OPERATIONS WITH FACTORS
+        if alternate_factors_fs:
+            #stochastic is not supported
+            for i in xrange(num_models):
+
+                ctx = numpy.tile(ctx0[i], [live_k, 1])
+
+                # for theano function, go from (batch_size, layers, dim) to (layers, batch_size, dim)
+                next_state_factors[i] = numpy.transpose(next_state_factors[i], (1,0,2))
+
+                inps = [next_w,next_w_factors, ctx, next_state_factors[i]]
+                ret = f_next_factors[i](*inps)
+
+                # dimension of dec_alpha (k-beam-size, number-of-input-hidden-units)
+                next_p[i], next_w_tmp, next_state_factors[i] = ret[0], ret[1], ret[2]
+                if return_alignment:
+                    #TODO: think about this
+                    dec_alphas[i] = ret[3]
+
+                # to more easily manipulate batch size, go from (layers, batch_size, dim) to (batch_size, layers, dim)
+                next_state_factors[i] = numpy.transpose(next_state[i], (1,0,2))
+
+                if suppress_unk:
+                    next_p[i][:,1] = -numpy.inf
+
+            cand_scores = hyp_scores[:, None] - sum(numpy.log(next_p))
+            probs = sum(next_p)/num_models
+            cand_flat = cand_scores.flatten()
+            probs_flat = probs.flatten()
+            ranks_flat = cand_flat.argpartition(k-dead_k-1)[:(k-dead_k)]
+
+            #averaging the attention weights accross models
+            if return_alignment:
+                mean_alignment = sum(dec_alphas)/num_models
+
+            voc_size = next_p[0].shape[1]
+            # index of each k-best hypothesis
+            trans_indices = ranks_flat / voc_size
+            word_indices = ranks_flat % voc_size
+            costs = cand_flat[ranks_flat]
+
+            new_hyp_samples = []
+            new_hyp_scores = numpy.zeros(k-dead_k).astype(floatX)
+            new_word_probs = []
+            new_hyp_states = []
+            new_hyp_states_factors = []
+            if return_alignment:
+                # holds the history of attention weights for each time step for each of the surviving hypothesis
+                # dimensions (live_k * target_words * source_hidden_units]
+                # at each time step we append the attention weights corresponding to the current target word
+                new_hyp_alignment = [[] for _ in xrange(k-dead_k)]
+
+            # ti -> index of k-best hypothesis
+            for idx, [ti, wi] in enumerate(zip(trans_indices, word_indices)):
+                new_hyp_samples.append(hyp_samples[ti]+[wi])
+                new_word_probs.append(word_probs[ti] + [probs_flat[ranks_flat[idx]].tolist()])
+                new_hyp_scores[idx] = copy.copy(costs[idx])
+                new_hyp_states.append([copy.copy(next_state[i][ti]) for i in xrange(num_models)])
+                new_hyp_states_factors.append([copy.copy(next_state_factors[i][ti]) for i in xrange(num_models)])
+                if return_alignment:
+                    # get history of attention weights for the current hypothesis
+                    new_hyp_alignment[idx] = copy.copy(hyp_alignment[ti])
+                    # extend the history with current attention weights
+                    new_hyp_alignment[idx].append(mean_alignment[ti])
+
+
+            # check the finished samples
+            new_live_k = 0
+            hyp_samples = []
+            hyp_scores = []
+            hyp_states = []
+            hyp_states_factors = []
+            word_probs = []
+            if return_alignment:
+                hyp_alignment = []
+
+            # sample and sample_score hold the k-best translations and their scores
+            for idx in xrange(len(new_hyp_samples)):
+                if return_hyp_graph:
+                    word, history = new_hyp_samples[idx][-1], new_hyp_samples[idx][:-1]
+                    score = new_hyp_scores[idx]
+                    word_prob = new_word_probs[idx][-1]
+                    hyp_graph.add(word, history, word_prob=word_prob, cost=score)
+                if new_hyp_samples[idx][-1] == 0:
+                    sample.append(copy.copy(new_hyp_samples[idx]))
+                    sample_score.append(new_hyp_scores[idx])
+                    sample_word_probs.append(new_word_probs[idx])
+                    if return_alignment:
+                        alignment.append(new_hyp_alignment[idx])
+                    dead_k += 1
+                else:
+                    new_live_k += 1
+                    hyp_samples.append(copy.copy(new_hyp_samples[idx]))
+                    hyp_scores.append(new_hyp_scores[idx])
+                    hyp_states.append(copy.copy(new_hyp_states[idx]))
+                    hyp_states_factors.append(copy.copy(new_hyp_states_factors[idx]))
+                    word_probs.append(new_word_probs[idx])
+                    if return_alignment:
+                        hyp_alignment.append(new_hyp_alignment[idx])
+            hyp_scores = numpy.array(hyp_scores)
+
+            live_k = new_live_k
+
+            if new_live_k < 1:
+                break
+            if dead_k >= k:
+                break
+
+            next_w_factors = numpy.array([w[-1] for w in hyp_samples])
+            next_w = numpy.array([w[-2] if len(w) >=2 else -1 for w in hyp_samples])
+            next_state_factors = [numpy.array(state) for state in zip(*hyp_states_factors)]
+            next_state = [numpy.array(state) for state in zip(*hyp_states)]
+        ## END OPERATIONS WITH FACTORS
+
+        #Here starts original code, that operates on surface forms
         for i in xrange(num_models):
             ctx = numpy.tile(ctx0[i], [live_k, 1])
 
             # for theano function, go from (batch_size, layers, dim) to (layers, batch_size, dim)
             next_state[i] = numpy.transpose(next_state[i], (1,0,2))
 
-            inps = [next_w, ctx, next_state[i]]
+            if alternate_factors_fs:
+                inps = [next_w, next_w_factors, ctx, next_state[i]]
+            else:
+                inps = [next_w, ctx, next_state[i]]
             ret = f_next[i](*inps)
 
             # dimension of dec_alpha (k-beam-size, number-of-input-hidden-units)
@@ -1123,6 +1246,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             new_hyp_scores = numpy.zeros(k-dead_k).astype(floatX)
             new_word_probs = []
             new_hyp_states = []
+            new_hyp_states_factors = []
             if return_alignment:
                 # holds the history of attention weights for each time step for each of the surviving hypothesis
                 # dimensions (live_k * target_words * source_hidden_units]
@@ -1135,6 +1259,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 new_word_probs.append(word_probs[ti] + [probs_flat[ranks_flat[idx]].tolist()])
                 new_hyp_scores[idx] = copy.copy(costs[idx])
                 new_hyp_states.append([copy.copy(next_state[i][ti]) for i in xrange(num_models)])
+                new_hyp_states.append([copy.copy(next_state_factors[i][ti]) for i in xrange(num_models)])
                 if return_alignment:
                     # get history of attention weights for the current hypothesis
                     new_hyp_alignment[idx] = copy.copy(hyp_alignment[ti])
@@ -1147,6 +1272,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             hyp_samples = []
             hyp_scores = []
             hyp_states = []
+            hyp_states_factors = []
             word_probs = []
             if return_alignment:
                 hyp_alignment = []
@@ -1170,6 +1296,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                     hyp_samples.append(copy.copy(new_hyp_samples[idx]))
                     hyp_scores.append(new_hyp_scores[idx])
                     hyp_states.append(copy.copy(new_hyp_states[idx]))
+                    hyp_states_factors.append(copy.copy(new_hyp_states_factors[idx]))
                     word_probs.append(new_word_probs[idx])
                     if return_alignment:
                         hyp_alignment.append(new_hyp_alignment[idx])
@@ -1183,7 +1310,9 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 break
 
             next_w = numpy.array([w[-1] for w in hyp_samples])
+            next_w_factors = numpy.array([w[-2] for w in hyp_samples])
             next_state = [numpy.array(state) for state in zip(*hyp_states)]
+            next_state_factors = [numpy.array(state) for state in zip(*hyp_states_factors)]
 
     # dump every remaining one
     if not argmax and live_k > 0:
