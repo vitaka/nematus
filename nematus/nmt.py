@@ -1213,7 +1213,7 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
             logging.error('Mismatch between number of factors in settings ({0}), and number in validation corpus ({1})\n'.format(options['factors'], len(x[0][0])))
             sys.exit(1)
         if len(y) and len(y[0]) and len(y[0][0]) > 1:
-            if not model_options['multiple_decoders_connection_feedback']:
+            if not options['multiple_decoders_connection_feedback']:
                 logging.error('Mismatch between number of TL factors in settings, and number in training corpus ({0})\n'.format(len(y[0][0])))
                 sys.exit(1)
 
@@ -1222,18 +1222,18 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
         x, x_mask, y, y_factors, y_mask = prepare_data(x, y,
                                             n_words_src=options['n_words_src'],
                                             n_words=options['n_words'],
-                                            n_factors=options['factors'],interleave_tl=options["interleave_tl"], factors_tl=model_options['multiple_decoders_connection_feedback'])
+                                            n_factors=options['factors'],interleave_tl=options["interleave_tl"], factors_tl=options['multiple_decoders_connection_feedback'])
 
         ### in optional save weights mode.
         if alignweights:
-            if model_options['multiple_decoders_connection_feedback']:
+            if options['multiple_decoders_connection_feedback']:
                 pprobs, attention = f_log_probs(x, x_mask, y, y_factors, y_mask)
             else:
                 pprobs, attention = f_log_probs(x, x_mask, y, y_mask)
             for jdata in get_alignments(attention, x_mask, y_mask):
                 alignments_json.append(jdata)
         else:
-            if model_options['multiple_decoders_connection_feedback']:
+            if options['multiple_decoders_connection_feedback']:
                 pprobs = f_log_probs(x, x_mask, y, y_factors,y_mask)
             else:
                 pprobs = f_log_probs(x, x_mask, y, y_mask)
