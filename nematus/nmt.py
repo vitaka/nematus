@@ -2097,14 +2097,20 @@ def train(dim_word=512,  # word vector dimensionality
                 valid_errs, valid_errs_sf, valid_errs_factors, alignment = pred_probs(f_log_probs, prepare_data,
                                         model_options, valid)
                 valid_err = valid_errs.mean()
+                if model_options['multiple_decoders_connection_feedback']:
+                    valid_err_sf = valid_errs_sf.mean()
+                    valid_err_factors = valid_errs_factors.mean()
+                    valid_err_for_comparison=valid_err_sf
+                else:
+                    valid_err_for_comparison=valid_err
+                training_progress.history_errs.append(float(valid_err_for_comparison))
 
-                training_progress.history_errs.append(float(valid_err))
 
-                if training_progress.uidx == 0 or valid_err <= numpy.array(training_progress.history_errs).min():
+                if training_progress.uidx == 0 or valid_err_for_comparison <= numpy.array(training_progress.history_errs).min():
                     best_p = unzip_from_theano(tparams, excluding_prefix='prior_')
                     best_opt_p = unzip_from_theano(optimizer_tparams, excluding_prefix='prior_')
                     training_progress.bad_counter = 0
-                if valid_err >= numpy.array(training_progress.history_errs).min():
+                if valid_err_for_comparison >= numpy.array(training_progress.history_errs).min():
                     training_progress.bad_counter += 1
                     if training_progress.bad_counter > patience:
 
@@ -2136,6 +2142,9 @@ def train(dim_word=512,  # word vector dimensionality
                         # stop
                         else:
                             logging.info('Valid {}'.format(valid_err))
+                            if model_options['multiple_decoders_connection_feedback']:
+                                logging.info('Valid_sf {}'.format(valid_err_sf))
+                                logging.info('Valid_factors {}'.format(valid_err_factors))
                             logging.info('Early Stop!')
                             training_progress.estop = True
                             break
@@ -2181,11 +2190,16 @@ def train(dim_word=512,  # word vector dimensionality
 
     if valid is not None:
         use_noise.set_value(0.)
-        valid_errs, alignment = pred_probs(f_log_probs, prepare_data,
+        valid_errs, valid_errs_sf, valid_errs_factors, alignment = pred_probs(f_log_probs, prepare_data,
                                         model_options, valid)
         valid_err = valid_errs.mean()
 
         logging.info('Valid {}'.format(valid_err))
+        if model_options['multiple_decoders_connection_feedback']:
+            valid_err_sf = valid_errs_sf.mean()
+            valid_err_factors = valid_errs_factors.mean()
+            logging.info('Valid_sf {}'.format(valid_err_sf))
+            logging.info('Valid_factors {}'.format(valid_err_factors))
 
     if best_p is not None:
         params = copy.copy(best_p)
