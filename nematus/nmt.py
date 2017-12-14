@@ -729,6 +729,7 @@ def build_model(tparams, options):
     cost = cost.reshape([y.shape[0], y.shape[1]])
     cost = (cost * y_mask).sum(0)
 
+    cost_factors=None
     if options['multiple_decoders_connection_feedback']:
         logit_shp = logit_factors.shape
         probs = tensor.nnet.softmax(logit_factors.reshape([logit_shp[0]*logit_shp[1],
@@ -747,7 +748,7 @@ def build_model(tparams, options):
     #print "Print out in build_model()"
     #print opt_ret
 
-    return trng, use_noise, x, x_mask, y, y_factors, y_mask, opt_ret, final_cost
+    return trng, use_noise, x, x_mask, y, y_factors, y_mask, opt_ret, final_cost, cost, cost_factors
 
 
 
@@ -1332,6 +1333,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
 # calculate the log probablities on a given corpus using translation model
 def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, normalization_alpha=0.0, alignweights=False):
     probs = []
+    probs_sf = []
+    probs_factors = []
     n_done = 0
 
     alignments_json = []
@@ -1356,14 +1359,14 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
         ### in optional save weights mode.
         if alignweights:
             if options['multiple_decoders_connection_feedback']:
-                pprobs, attention = f_log_probs(x, x_mask, y, y_factors, y_mask)
+                pprobs, attention, pprobs_sf, pprobs_factors = f_log_probs(x, x_mask, y, y_factors, y_mask)
             else:
                 pprobs, attention = f_log_probs(x, x_mask, y, y_mask)
             for jdata in get_alignments(attention, x_mask, y_mask):
                 alignments_json.append(jdata)
         else:
             if options['multiple_decoders_connection_feedback']:
-                pprobs = f_log_probs(x, x_mask, y, y_factors,y_mask)
+                pprobs, pprobs_sf, pprobs_factors = f_log_probs(x, x_mask, y, y_factors,y_mask)
             else:
                 pprobs = f_log_probs(x, x_mask, y, y_mask)
 
@@ -1371,13 +1374,21 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
         if normalization_alpha:
             adjusted_lengths = numpy.array([numpy.count_nonzero(s) ** normalization_alpha for s in y_mask.T])
             pprobs /= adjusted_lengths
+            pprobs_sf /= adjusted_lengths
+            pprobs_factors /= adjusted_lengths
 
         for pp in pprobs:
             probs.append(pp)
 
+        for pp in pprobs_sf:
+            probs_sf.append(pp)
+
+        for pp in pprobs_factors:
+            probs_factors.append(pp)
+
         logging.debug('%d samples computed' % (n_done))
 
-    return numpy.array(probs), alignments_json
+    return numpy.array(probs), numpy.array(probs_sf) , numpy.array(probs_factors)  , alignments_json
 
 
 def augment_raml_data(x, y, tgt_worddict, options):
@@ -1710,7 +1721,7 @@ def train(dim_word=512,  # word vector dimensionality
     trng, use_noise, \
         x, x_mask, y, y_factors , y_mask, \
         opt_ret, \
-        cost = \
+        cost, cost_sf, cost_factors = \
         build_model(tparams, model_options)
 
     if model_options['multiple_decoders_connection_feedback']:
@@ -1727,7 +1738,10 @@ def train(dim_word=512,  # word vector dimensionality
 
     # before any regularizer
     logging.info('Building f_log_probs...')
-    f_log_probs = theano.function(inps, cost, profile=profile)
+    if model_options['multiple_decoders_connection_feedback']:
+        f_log_probs = theano.function(inps, [cost, cost_sf, cost_factors], profile=profile)
+    else:
+        f_log_probs = theano.function(inps, cost, profile=profile)
     logging.info('Done')
 
     if model_options['objective'] == 'CE':
@@ -2080,9 +2094,10 @@ def train(dim_word=512,  # word vector dimensionality
             # validate model on validation set and early stop if necessary
             if valid is not None and validFreq and numpy.mod(training_progress.uidx, validFreq) == 0:
                 use_noise.set_value(0.)
-                valid_errs, alignment = pred_probs(f_log_probs, prepare_data,
+                valid_errs, valid_errs_sf, valid_errs_factors, alignment = pred_probs(f_log_probs, prepare_data,
                                         model_options, valid)
                 valid_err = valid_errs.mean()
+
                 training_progress.history_errs.append(float(valid_err))
 
                 if training_progress.uidx == 0 or valid_err <= numpy.array(training_progress.history_errs).min():
@@ -2126,6 +2141,12 @@ def train(dim_word=512,  # word vector dimensionality
                             break
 
                 logging.info('Valid {}'.format(valid_err))
+
+                if model_options['multiple_decoders_connection_feedback']:
+                    valid_err_sf = valid_errs_sf.mean()
+                    valid_err_factors = valid_errs_factors.mean()
+                    logging.info('Valid_sf {}'.format(valid_err_sf))
+                    logging.info('Valid_factors {}'.format(valid_err_factors))
 
                 if external_validation_script:
                     logging.info("Calling external validation script")
