@@ -982,7 +982,7 @@ def build_full_sampler(tparams, options, use_noise, trng, greedy=False):
 # this function iteratively calls f_init and f_next functions.
 def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                stochastic=True, argmax=False, return_alignment=False, suppress_unk=False,
-               return_hyp_graph=False, fs_next_factors=None, alternate_factors_fs=False):
+               return_hyp_graph=False, f_next_factors=None, alternate_factors_fs=False):
 
     # k is the beam size we have
     if k > 1 and argmax:

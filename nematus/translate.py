@@ -388,7 +388,7 @@ class Translator(object):
                           stochastic=False, argmax=False,
                           return_alignment=return_alignment,
                           suppress_unk=suppress_unk,
-                          return_hyp_graph=return_hyp_graph, fs_next_factors=fs_next_factors, alternate_factors_fs=alternate_factors_fs)
+                          return_hyp_graph=return_hyp_graph, f_next_factors=fs_next_factors, alternate_factors_fs=alternate_factors_fs)
 
 
     ### WRITING TO AND READING FROM QUEUES ###
