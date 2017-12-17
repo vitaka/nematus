@@ -329,12 +329,12 @@ class Translator(object):
             idx = input_item.idx
             request_id = input_item.request_id
 
-            output_item = self._translate(process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample)
+            output_item = self._translate(process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, self.factors_tl)
             self._output_queue.put((request_id, idx, output_item))
 
         return
 
-    def _translate(self, process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample):
+    def _translate(self, process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, alternate_factors_fs):
         """
         Actual translation (model sampling).
         """
@@ -348,7 +348,7 @@ class Translator(object):
         logging.debug('{0} - {1}\n'.format(process_id, idx))
 
         # sample given an input sequence and obtain scores
-        sample, score, word_probs, alignment, hyp_graph = self._sample(input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample)
+        sample, score, word_probs, alignment, hyp_graph = self._sample(input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, alternate_factors_fs)
 
         # normalize scores according to sequence lengths
         if normalization_alpha:
