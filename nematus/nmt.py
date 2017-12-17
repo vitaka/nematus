@@ -1876,6 +1876,10 @@ def train(dim_word=512,  # word vector dimensionality
                                                                     n_words_src=n_words_src,
                                                                     n_words=n_words,interleave_tl=interleave_tl, factors_tl=model_options['multiple_decoders_connection_feedback'])
 
+                logging.debug("Read Minibatch x: {}".format(x))
+                logging.debug("Read Minibatch y: {}".format(y))
+                logging.debug("Read Minibatch y_factors: {}".format(y_factors))
+
                 if x is None:
                     logging.warning('Minibatch with zero sample under length %d' % maxlen)
                     training_progress.uidx -= 1
