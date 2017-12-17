@@ -1260,7 +1260,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 new_word_probs.append(word_probs[ti] + [probs_flat[ranks_flat[idx]].tolist()])
                 new_hyp_scores[idx] = copy.copy(costs[idx])
                 new_hyp_states.append([copy.copy(next_state[i][ti]) for i in xrange(num_models)])
-                new_hyp_states.append([copy.copy(next_state_factors[i][ti]) for i in xrange(num_models)])
+                new_hyp_states_factors.append([copy.copy(next_state_factors[i][ti]) for i in xrange(num_models)])
                 if return_alignment:
                     # get history of attention weights for the current hypothesis
                     new_hyp_alignment[idx] = copy.copy(hyp_alignment[ti])
