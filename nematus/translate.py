@@ -494,7 +494,7 @@ class Translator(object):
             # single-best translation
             else:
                 current_alignment = None if not translation_settings.get_alignment else alignment
-                my_target_words,my_target_factors = seqs2words(samples[j], self._word_idict_trg, join=False, interleave_tl_factors=self.tl_factors,inverse_target_dictionary_factors=self._factor_idict_trg)
+                my_target_words,my_target_factors = seqs2words(samples, self._word_idict_trg, join=False, interleave_tl_factors=self.tl_factors,inverse_target_dictionary_factors=self._factor_idict_trg)
                 translation = Translation(sentence_id=i,
                                           source_words=source_sentences[i],
                                           target_words=my_target_words,
