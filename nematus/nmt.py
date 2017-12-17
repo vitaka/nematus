@@ -1356,6 +1356,9 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
                                             n_words_src=options['n_words_src'],
                                             n_words=options['n_words'],
                                             n_factors=options['factors'],interleave_tl=options["interleave_tl"], factors_tl=options['multiple_decoders_connection_feedback'])
+        logging.debug("Read validation Minibatch x: {}".format(x))
+        logging.debug("Read validation Minibatch y: {}".format(y))
+        logging.debug("Read validation Minibatch y_factors: {}".format(y_factors))
 
         ### in optional save weights mode.
         if alignweights:
