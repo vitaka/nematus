@@ -24,7 +24,7 @@ class Translation(object):
     Models a translated segment.
     """
     def __init__(self, source_words, target_words, sentence_id=None, score=0, alignment=None,
-                 target_probs=None, hyp_graph=None, hypothesis_id=None):
+                 target_probs=None, hyp_graph=None, hypothesis_id=None, target_factors=None):
         self.source_words = source_words
         self.target_words = target_words
         self.sentence_id = sentence_id
@@ -33,6 +33,7 @@ class Translation(object):
         self.target_probs = target_probs #TODO: assertion of length?
         self.hyp_graph = hyp_graph
         self.hypothesis_id = hypothesis_id
+        self.target_factors=target_factors
 
     def get_alignment(self):
         return self.alignment
@@ -127,6 +128,9 @@ class Translator(object):
 
         # load model options
         self._load_model_options()
+        self.tl_factors=False
+        if self._options['multiple_decoders_connection_feedback']:
+            self.tl_factors=True
         # load and invert dictionaries
         self._build_dictionaries()
         # set up queues
@@ -153,8 +157,13 @@ class Translator(object):
         vocabulary.
         """
         dictionaries = self._options[0]['dictionaries']
-        dictionaries_source = dictionaries[:-1]
-        dictionary_target = dictionaries[-1]
+
+        if self.tl_factors:
+            dictionaries_source=dictionaries[:-2]
+            dictionary_target=dictionaries[-2:]
+        else:
+            dictionaries_source = dictionaries[:-1]
+            dictionary_target = dictionaries[-1]
 
         # load and invert source dictionaries
         word_dicts = []
@@ -177,7 +186,11 @@ class Translator(object):
         self._word_idicts = word_idicts
 
         # load and invert target dictionary
-        word_dict_trg = load_dict(dictionary_target)
+        if self.tl_factors:
+            mydictionary_target=dictionary_target[0]
+        else:
+            mydictionary_target=dictionary_target
+        word_dict_trg = load_dict(mydictionary_target)
         word_idict_trg = dict()
         for kk, vv in word_dict_trg.iteritems():
             word_idict_trg[vv] = kk
@@ -185,6 +198,15 @@ class Translator(object):
         word_idict_trg[1] = 'UNK'
 
         self._word_idict_trg = word_idict_trg
+
+        if self.tl_factors:
+            factor_dict_trg = load_dict(dictionary_target[1])
+            factor_idict_trg = dict()
+            for kk, vv in factor_dict_trg.iteritems():
+                factor_idict_trg[vv] = kk
+            factor_idict_trg[0] = '<eos>'
+            factor_idict_trg[1] = 'UNK'
+            self._factor_idict_trg=factor_idict_trg
 
     def _init_queues(self):
         """
@@ -456,27 +478,31 @@ class Translator(object):
                 order = numpy.argsort(scores)
                 n_best_list = []
                 for j in order:
+                    my_target_words,my_target_factors = seqs2words(samples[j], self._word_idict_trg, join=False, interleave_tl_factors=self.tl_factors,inverse_target_dictionary_factors=self._factor_idict_trg)
                     current_alignment = None if not translation_settings.get_alignment else alignment[j]
                     translation = Translation(sentence_id=i,
                                               source_words=source_sentences[i],
-                                              target_words=seqs2words(samples[j], self._word_idict_trg, join=False),
+                                              target_words=my_target_words,
                                               score=scores[j],
                                               alignment=current_alignment,
                                               target_probs=word_probs[j],
                                               hyp_graph=hyp_graph,
-                                              hypothesis_id=j)
+                                              hypothesis_id=j,
+                                              target_factors=my_target_factors)
                     n_best_list.append(translation)
                 translations.append(n_best_list)
             # single-best translation
             else:
                 current_alignment = None if not translation_settings.get_alignment else alignment
+                my_target_words,my_target_factors = seqs2words(samples[j], self._word_idict_trg, join=False, interleave_tl_factors=self.tl_factors,inverse_target_dictionary_factors=self._factor_idict_trg)
                 translation = Translation(sentence_id=i,
                                           source_words=source_sentences[i],
-                                          target_words=seqs2words(samples, self._word_idict_trg, join=False),
+                                          target_words=my_target_words,
                                           score=scores,
                                           alignment=current_alignment,
                                           target_probs=word_probs,
-                                          hyp_graph=hyp_graph)
+                                          hyp_graph=hyp_graph,
+                                          target_factors=my_target_factors)
                 translations.append(translation)
         return translations
 
@@ -527,6 +553,9 @@ class Translator(object):
         # translations themselves
         output_items.append(" ".join(translation.target_words))
 
+        if self.tl_factors:
+            output_items.append(" ".join(translation.target_factors))
+
         # write scores for nbest?
         if translation_settings.n_best is True:
             output_items.append(str(translation.score))
@@ -535,7 +564,7 @@ class Translator(object):
         if translation_settings.get_word_probs:
             output_items.append(translation.get_target_probs())
 
-        if translation_settings.n_best is True:
+        if translation_settings.n_best is True or self.tl_factors:
             output_file.write(" ||| ".join(output_items) + "\n")
         else:
             output_file.write("\n".join(output_items) + "\n")
