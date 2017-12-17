@@ -329,7 +329,7 @@ class Translator(object):
             idx = input_item.idx
             request_id = input_item.request_id
 
-            output_item = self._translate(process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, self.factors_tl)
+            output_item = self._translate(process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, self.tl_factors)
             self._output_queue.put((request_id, idx, output_item))
 
         return
