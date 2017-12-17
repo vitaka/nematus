@@ -1011,6 +1011,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
     word_probs=[ [] for i in xrange(live_k) ]
     hyp_scores = numpy.zeros(live_k).astype(floatX)
     hyp_states = []
+    hyp_states_factors = []
     if return_alignment:
         hyp_alignment = [[] for _ in xrange(live_k)]
 
@@ -1059,7 +1060,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                     dec_alphas[i] = ret[3]
 
                 # to more easily manipulate batch size, go from (layers, batch_size, dim) to (batch_size, layers, dim)
-                next_state_factors[i] = numpy.transpose(next_state[i], (1,0,2))
+                next_state_factors[i] = numpy.transpose(next_state_factors[i], (1,0,2))
 
                 if suppress_unk:
                     next_p[i][:,1] = -numpy.inf
