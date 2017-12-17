@@ -129,7 +129,7 @@ class Translator(object):
         # load model options
         self._load_model_options()
         self.tl_factors=False
-        if self._options['multiple_decoders_connection_feedback']:
+        if self._options[0]['multiple_decoders_connection_feedback']:
             self.tl_factors=True
         # load and invert dictionaries
         self._build_dictionaries()
