@@ -1547,8 +1547,8 @@ def train(dim_word=512,  # word vector dimensionality
           weight_normalisation=False, # normalize weights
           interleave_tl=False,
           multiple_decoders_connection_feedback=False,
-          multiple_decoders_connection_state=False
-
+          multiple_decoders_connection_state=False,
+          debug=False
     ):
 
     # Model options
