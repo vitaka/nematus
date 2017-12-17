@@ -2354,6 +2354,7 @@ if __name__ == '__main__':
                          help="display loss after INT updates (default: %(default)s)")
     display.add_argument('--sampleFreq', type=int, default=10000, metavar='INT',
                          help="display some samples after INT updates (default: %(default)s)")
+    display.add_argument('--debug', action="store_true", help="enables displaying of debug mesages")
 
     mrt = parser.add_argument_group('minimum risk training parameters')
     mrt.add_argument('--mrt_alpha', type=float, default=0.005, metavar='FLOAT',
@@ -2393,6 +2394,8 @@ if __name__ == '__main__':
 
     # set up logging
     level = logging.INFO
+    if args.debug:
+        level=logging.DEBUG
     logging.basicConfig(level=level, format='%(levelname)s: %(message)s')
 
     if args.multiple_decoders_connection_state and args.multiple_decoders_connection_feedback:

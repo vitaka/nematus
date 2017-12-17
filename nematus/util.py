@@ -32,13 +32,23 @@ def load_config(basename):
             sys.exit(1)
 
 
-def seqs2words(seq, inverse_target_dictionary, join=True):
+def seqs2words(seq, inverse_target_dictionary, join=True, interleave_tl_factors=False, inverse_target_dictionary_factors=None):
     words = []
-    for w in seq:
-        if w == 0:
-            break
-        if w in inverse_target_dictionary:
-            words.append(inverse_target_dictionary[w])
+    factors = []
+    for i,w in enumerate(seq):
+        if not interleave_tl_factors or i % 2 == 0:
+            if w == 0:
+                break
+            if w in inverse_target_dictionary:
+                words.append(inverse_target_dictionary[w])
+            else:
+                words.append('UNK')
         else:
-            words.append('UNK')
-    return ' '.join(words) if join else words
+            if w == 0:
+                break
+            if w in inverse_target_dictionary_factors:
+                factors.append(inverse_target_dictionary_factors[w])
+            else:
+                factors.append('UNK')
+
+    return ' '.join(words) if join else words, ' '.join(factors) if join else factors
