@@ -364,7 +364,7 @@ class Translator(object):
 
         return output_item
 
-    def _sample(self, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample):
+    def _sample(self, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, alternate_factors_fs):
         """
         Sample from model.
         """
@@ -388,7 +388,7 @@ class Translator(object):
                           stochastic=False, argmax=False,
                           return_alignment=return_alignment,
                           suppress_unk=suppress_unk,
-                          return_hyp_graph=return_hyp_graph, fs_next_factors=fs_next_factors)
+                          return_hyp_graph=return_hyp_graph, fs_next_factors=fs_next_factors, alternate_factors_fs=alternate_factors_fs)
 
 
     ### WRITING TO AND READING FROM QUEUES ###
