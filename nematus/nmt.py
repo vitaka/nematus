@@ -515,6 +515,9 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
             target_dropout = dropout((n_timesteps_trg, n_samples, 1), options['dropout_target'])
             target_dropout = tensor.tile(target_dropout, (1, 1, options['dim_word']))
 
+    #y: dims: maxlen x size_batch
+    #emb dims: maxlen x size_batch x emb_size
+
     # word embedding (target), we will shift the target sequence one time step
     # to the right. This is done because of the bi-gram connections in the
     # readout and decoder rnn. The first target will be all zeros and we will
@@ -530,7 +533,7 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
         emb = tensor.switch(y[:, None] < 0,
             tensor.zeros((1, options['dim_word'])),
             emb)
-        emb_factors = tensor.switch(y[:, None] < 0,
+        emb_factors = tensor.switch(y_factors[:, None] < 0,
             tensor.zeros((1, options['dim_word'])),
             emb_factors)
         #Build feedback to surface form decoder (tanh over concatenation)
