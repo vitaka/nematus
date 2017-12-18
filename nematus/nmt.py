@@ -2111,7 +2111,7 @@ def train(dim_word=512,  # word vector dimensionality
                 if model_options['multiple_decoders_connection_feedback']:
                     valid_err_sf = valid_errs_sf.mean()
                     valid_err_factors = valid_errs_factors.mean()
-                    valid_err_for_comparison=valid_err_sf
+                    valid_err_for_comparison=valid_err
                 else:
                     valid_err_for_comparison=valid_err
                 training_progress.history_errs.append(float(valid_err_for_comparison))
