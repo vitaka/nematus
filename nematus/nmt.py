@@ -11,6 +11,8 @@ import numpy
 import copy
 import argparse
 
+import math
+
 import os
 import sys
 import time
@@ -1072,7 +1074,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                     print >> sys.stderr,"  hyp {} sample (score = {} ): {}".format(debug_i,hyp_scores[debug_i],hyp_samples[debug_i])
                     for word_id, value in enumerate(row):
                         if value > 0.1:
-                            print >>sys.stderr,"    {}: {} [log: ]".format(word_id,value, math.log(value))
+                            print >>sys.stderr,"    {}: {} [log: {}]".format(word_id,value, math.log(value))
 
             cand_scores = hyp_scores[:, None] - sum(numpy.log(next_p))
             probs = sum(next_p)/num_models
@@ -1193,7 +1195,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 print >> sys.stderr,"  hyp {} sample (score = {}): {}".format(debug_i,hyp_scores[debug_i],hyp_samples[debug_i])
                 for word_id, value in enumerate(row):
                     if value > 0.1:
-                        print >>sys.stderr,"    {}: {} [log: ]".format(word_id,value, math.log(value))
+                        print >>sys.stderr,"    {}: {} [log: {} ]".format(word_id,value, math.log(value))
 
         if stochastic:
             #batches are not supported with argmax: output data structure is different
