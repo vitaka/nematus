@@ -985,8 +985,10 @@ def build_full_sampler(tparams, options, use_noise, trng, greedy=False):
 # this function iteratively calls f_init and f_next functions.
 def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                stochastic=True, argmax=False, return_alignment=False, suppress_unk=False,
-               return_hyp_graph=False, f_next_factors=None, alternate_factors_fs=False):
+               return_hyp_graph=False, f_next_factors=None, alternate_factors_fs=False, debug=False):
 
+    if debug:
+        logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
     # k is the beam size we have
     if k > 1 and argmax:
         assert not stochastic, \
@@ -1067,7 +1069,10 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
 
                 if suppress_unk:
                     next_p[i][:,1] = -numpy.inf
-
+            if debug:
+                logging.debug("factors, next_p, model 0 for each hypothesis")
+                for debug_i,row in enumerate(next_p[0]):
+                    logging.debug("  hyp {}: {}".format(debug_i,row))
             cand_scores = hyp_scores[:, None] - sum(numpy.log(next_p))
             probs = sum(next_p)/num_models
             cand_flat = cand_scores.flatten()
