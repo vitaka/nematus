@@ -6,7 +6,7 @@ Build a neural machine translation model with soft attention
 import theano
 import theano.tensor as tensor
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
-
+import math
 import json
 import numpy
 import copy
@@ -1070,7 +1070,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             if debug:
                 print >>sys.stderr,"factors, next_p, model 0 for each hypothesis"
                 for debug_i,row in enumerate(next_p[0]):
-                    print >> sys.stderr,"  hyp {} sample (score = {}): {}".format(debug_i,hyp_scores[debug_i],hyp_samples[debug_i])
+                    print >> sys.stderr,"  hyp {} sample (score = {} [log: {}]): {}".format(debug_i,hyp_scores[debug_i],math.log(hyp_scores[debug_i]),hyp_samples[debug_i])
                     for word_id, value in enumerate(row):
                         if value > 0.1:
                             print >>sys.stderr,"    {}: {}".format(word_id,value)
@@ -1191,7 +1191,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
         if debug:
             print >>sys.stderr,"surface forms, next_p, model 0 for each hypothesis"
             for debug_i,row in enumerate(next_p[0]):
-                print >> sys.stderr,"  hyp {} sample (score = {}): {}".format(debug_i,hyp_scores[debug_i],hyp_samples[debug_i])
+                print >> sys.stderr,"  hyp {} sample (score = {} [log: {}]): {}".format(debug_i,hyp_scores[debug_i],math.log(hyp_scores[debug_i]),hyp_samples[debug_i])
                 for word_id, value in enumerate(row):
                     if value > 0.1:
                         print >>sys.stderr,"    {}: {}".format(word_id,value)
