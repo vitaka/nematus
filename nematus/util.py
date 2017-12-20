@@ -36,7 +36,7 @@ def seqs2words(seq, inverse_target_dictionary, join=True, interleave_tl_factors=
     words = []
     factors = []
     for i,w in enumerate(seq):
-        if not interleave_tl_factors or i % 2 == 0:
+        if not interleave_tl_factors or i % 2 == 1:
             if w == 0:
                 break
             if w in inverse_target_dictionary:
