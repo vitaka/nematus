@@ -212,7 +212,7 @@ def init_params(options):
                                 nin=options['dim'], nout=options['dim_word'],
                                 ortho=False)
     params = get_layer_param('ff')(options, params, prefix='ff_logit_prev',
-                                nin=options['dim_word'],
+                                nin=options['dim_word']*2 if options['multiple_decoders_connection_feedback'] and options['combination_sf_factors_concat'] else options['dim_word'],
                                 nout=options['dim_word'], ortho=False)
     params = get_layer_param('ff')(options, params, prefix='ff_logit_ctx',
                                 nin=ctxdim, nout=options['dim_word'],
@@ -228,7 +228,7 @@ def init_params(options):
                                     nin=options['dim'], nout=options['dim_word'],
                                     ortho=False)
         params = get_layer_param('ff')(options, params, prefix='ff_logit_prev_factor1',
-                                    nin=options['dim_word'],
+                                    nin=options['dim_word']*2 if options['multiple_decoders_connection_feedback'] and options['combination_sf_factors_concat'] else options['dim_word'],
                                     nout=options['dim_word'], ortho=False)
         params = get_layer_param('ff')(options, params, prefix='ff_logit_ctx_factor1',
                                     nin=ctxdim, nout=options['dim_word'],
