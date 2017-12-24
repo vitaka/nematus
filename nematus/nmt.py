@@ -163,9 +163,10 @@ def init_params(options):
         params = get_layer_param('ff')(options, params, prefix='ff_state_factor1',
                                     nin=ctxdim, nout=dec_state)
 
-        #Feedback to the decoders
-        params = get_layer_param('ff')(options, params, prefix='feedback_fs',nin=options['dim_word']*2, nout=options['dim_word'])
-        params = get_layer_param('ff')(options, params, prefix='feedback_factors',nin=options['dim_word']*2, nout=options['dim_word'])
+        if not options['combination_sf_factors_concat'] :
+            #Feedback to the decoders
+            params = get_layer_param('ff')(options, params, prefix='feedback_fs',nin=options['dim_word']*2, nout=options['dim_word'])
+            params = get_layer_param('ff')(options, params, prefix='feedback_factors',nin=options['dim_word']*2, nout=options['dim_word'])
 
 
     # decoder
