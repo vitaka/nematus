@@ -171,7 +171,7 @@ def init_params(options):
     # decoder
     params = get_layer_param(options['decoder'])(options, params,
                                               prefix='decoder',
-                                              nin=options['dim_word'],
+                                              nin=options['dim_word']*2 if options['multiple_decoders_connection_feedback'] and options['combination_sf_factors_concat'] else options['dim_word'],
                                               dim=options['dim'],
                                               dimctx=ctxdim,
                                               recurrence_transition_depth=options['dec_base_recurrence_transition_depth'])
@@ -179,7 +179,7 @@ def init_params(options):
     if options['multiple_decoders_connection_feedback']:
         params = get_layer_param(options['decoder'])(options, params,
                                                   prefix='decoder_factor1',
-                                                  nin=options['dim_word'],
+                                                  nin=options['dim_word']*2 if options['multiple_decoders_connection_feedback'] and options['combination_sf_factors_concat'] else options['dim_word'],
                                                   dim=options['dim'],
                                                   dimctx=ctxdim,
                                                   recurrence_transition_depth=options['dec_base_recurrence_transition_depth'])
@@ -537,11 +537,16 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
         emb_factors = tensor.switch(y_factors[:, None] < 0,
             tensor.zeros((1, options['dim_word'])),
             emb_factors)
-        #Build feedback to surface form decoder (tanh over concatenation)
-        emb_for_fs_dec= get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=1), options, dropout, prefix='feedback_fs')
 
-        #Build feedback to MSD decoder
-        emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=1), options, dropout, prefix='feedback_factors')
+        if options['combination_sf_factors_concat']:
+            emb_for_fs_dec= concatenate([emb,emb_factors],axis=1)
+            #Build feedback to MSD decoder
+            emb_for_factors_dec= concatenate([emb,emb_factors],axis=1)
+        else:
+            #Build feedback to surface form decoder (tanh over concatenation)
+            emb_for_fs_dec= get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=1), options, dropout, prefix='feedback_fs')
+            #Build feedback to MSD decoder
+            emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=1), options, dropout, prefix='feedback_factors')
     else:
         emb_shifted = tensor.zeros_like(emb)
         emb_shifted = tensor.set_subtensor(emb_shifted[1:], emb[:-1])
@@ -556,11 +561,14 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
 
         emb_factors = emb_factors_shifted
 
-        #Build feedback to surface form decoder (tanh over concatenation)
-        emb_for_fs_dec= get_layer_constr('ff')(tparams, concatenate([emb,emb_factors_unshifted],axis=2), options, dropout, prefix='feedback_fs')
-
-        #Build feedback to MSD decoder
-        emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=2), options, dropout, prefix='feedback_factors')
+        if options['combination_sf_factors_concat']:
+            emb_for_fs_dec= concatenate([emb,emb_factors_unshifted],axis=2)
+            emb_for_factors_dec=  concatenate([emb,emb_factors],axis=2)
+        else:
+            #Build feedback to surface form decoder (tanh over concatenation)
+            emb_for_fs_dec= get_layer_constr('ff')(tparams, concatenate([emb,emb_factors_unshifted],axis=2), options, dropout, prefix='feedback_fs')
+            #Build feedback to MSD decoder
+            emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=2), options, dropout, prefix='feedback_factors')
 
 
     #TODO: loop over different dropouts? and pctx_?
@@ -1571,6 +1579,7 @@ def train(dim_word=512,  # word vector dimensionality
           interleave_tl=False,
           multiple_decoders_connection_feedback=False,
           multiple_decoders_connection_state=False,
+          combination_sf_factors_concat=False,
           debug=False
     ):
 
@@ -2322,6 +2331,7 @@ if __name__ == '__main__':
                          help='decoder recurrent layer after first one (default: %(default)s)')
     network.add_argument('--multiple_decoders_connection_feedback', action="store_true")
     network.add_argument('--multiple_decoders_connection_state', action="store_true")
+    network.add_argument('--combination_sf_factors_concat', action="store_true")
 
     training = parser.add_argument_group('training parameters')
     training.add_argument('--maxlen', type=int, default=100, metavar='INT',
