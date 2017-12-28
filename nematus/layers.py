@@ -647,6 +647,118 @@ def gru_cond_layer(tparams, state_below, options, dropout, prefix='gru',
     return rval
 
 
+# Conditional GRU layer with Attention
+def param_init_gru_cond_2_decoders(options, params, prefix='gru_cond',
+                        nin=None, dim=None, dimctx=None,
+                        nin_nonlin=None, dim_nonlin=None,
+                        recurrence_transition_depth=2):
+    if nin is None:
+        nin = options['dim']
+    if dim is None:
+        dim = options['dim']
+    if dimctx is None:
+        dimctx = options['dim']
+    if nin_nonlin is None:
+        nin_nonlin = nin
+    if dim_nonlin is None:
+        dim_nonlin = dim
+
+    scale_add = 0.0
+    scale_mul = 1.0
+
+    for factor_prefix in ['fs','factors']:
+        #TODO: introduce pp3 below
+        W = numpy.concatenate([norm_weight(nin, dim),
+                           norm_weight(nin, dim)], axis=1)
+        params[pp(prefix, 'W')] = W
+        params[pp(prefix, 'b')] = numpy.zeros((2 * dim,)).astype(floatX)
+        U = numpy.concatenate([ortho_weight(dim_nonlin),
+                               ortho_weight(dim_nonlin)], axis=1)
+        params[pp(prefix, 'U')] = U
+
+        Wx = norm_weight(nin_nonlin, dim_nonlin)
+        params[pp(prefix, 'Wx')] = Wx
+        Ux = ortho_weight(dim_nonlin)
+        params[pp(prefix, 'Ux')] = Ux
+        params[pp(prefix, 'bx')] = numpy.zeros((dim_nonlin,)).astype(floatX)
+
+        for i in xrange(recurrence_transition_depth - 1):
+            suffix = '' if i == 0 else ('_drt_%s' % i)
+            U_nl = numpy.concatenate([ortho_weight(dim_nonlin),
+                                  ortho_weight(dim_nonlin)], axis=1)
+            params[pp(prefix, 'U_nl'+suffix)] = U_nl
+            params[pp(prefix, 'b_nl'+suffix)] = numpy.zeros((2 * dim_nonlin,)).astype(floatX)
+            Ux_nl = ortho_weight(dim_nonlin)
+            params[pp(prefix, 'Ux_nl'+suffix)] = Ux_nl
+            params[pp(prefix, 'bx_nl'+suffix)] = numpy.zeros((dim_nonlin,)).astype(floatX)
+
+            if options['layer_normalisation']:
+                params[pp(prefix,'U_nl%s_lnb' % suffix)] = scale_add * numpy.ones((2*dim)).astype(floatX)
+                params[pp(prefix,'U_nl%s_lns' % suffix)] = scale_mul * numpy.ones((2*dim)).astype(floatX)
+                params[pp(prefix,'Ux_nl%s_lnb' % suffix)] = scale_add * numpy.ones((1*dim)).astype(floatX)
+                params[pp(prefix,'Ux_nl%s_lns' % suffix)] = scale_mul * numpy.ones((1*dim)).astype(floatX)
+            if options['weight_normalisation']:
+                params[pp(prefix,'U_nl%s_wns') % suffix] = scale_mul * numpy.ones((2*dim)).astype(floatX)
+                params[pp(prefix,'Ux_nl%s_wns') % suffix] = scale_mul * numpy.ones((1*dim)).astype(floatX)
+
+            # context to LSTM
+            if i == 0:
+                Wc = norm_weight(dimctx, dim*2)
+                params[pp(prefix, 'Wc'+suffix)] = Wc
+                Wcx = norm_weight(dimctx, dim)
+                params[pp(prefix, 'Wcx'+suffix)] = Wcx
+                if options['layer_normalisation']:
+                    params[pp(prefix,'Wc%s_lnb') % suffix] = scale_add * numpy.ones((2*dim)).astype(floatX)
+                    params[pp(prefix,'Wc%s_lns') % suffix] = scale_mul * numpy.ones((2*dim)).astype(floatX)
+                    params[pp(prefix,'Wcx%s_lnb') % suffix] = scale_add * numpy.ones((1*dim)).astype(floatX)
+                    params[pp(prefix,'Wcx%s_lns') % suffix] = scale_mul * numpy.ones((1*dim)).astype(floatX)
+                if options['weight_normalisation']:
+                    params[pp(prefix,'Wc%s_wns') % suffix] = scale_mul * numpy.ones((2*dim)).astype(floatX)
+                    params[pp(prefix,'Wcx%s_wns') % suffix] = scale_mul * numpy.ones((1*dim)).astype(floatX)
+
+        # attention: combined -> hidden
+        W_comb_att = norm_weight(dim, dimctx)
+        params[pp(prefix, 'W_comb_att')] = W_comb_att
+
+        # attention: context -> hidden
+        Wc_att = norm_weight(dimctx)
+        params[pp(prefix, 'Wc_att')] = Wc_att
+
+        # attention: hidden bias
+        b_att = numpy.zeros((dimctx,)).astype(floatX)
+        params[pp(prefix, 'b_att')] = b_att
+
+        # attention:
+        U_att = norm_weight(dimctx, 1)
+        params[pp(prefix, 'U_att')] = U_att
+        c_att = numpy.zeros((1,)).astype(floatX)
+        params[pp(prefix, 'c_tt')] = c_att
+
+        if options['layer_normalisation']:
+            # layer-normalization parameters
+            params[pp(prefix,'W_lnb')] = scale_add * numpy.ones((2*dim)).astype(floatX)
+            params[pp(prefix,'W_lns')] = scale_mul * numpy.ones((2*dim)).astype(floatX)
+            params[pp(prefix,'U_lnb')] = scale_add * numpy.ones((2*dim)).astype(floatX)
+            params[pp(prefix,'U_lns')] = scale_mul * numpy.ones((2*dim)).astype(floatX)
+            params[pp(prefix,'Wx_lnb')] = scale_add * numpy.ones((1*dim)).astype(floatX)
+            params[pp(prefix,'Wx_lns')] = scale_mul * numpy.ones((1*dim)).astype(floatX)
+            params[pp(prefix,'Ux_lnb')] = scale_add * numpy.ones((1*dim)).astype(floatX)
+            params[pp(prefix,'Ux_lns')] = scale_mul * numpy.ones((1*dim)).astype(floatX)
+            params[pp(prefix,'W_comb_att_lnb')] = scale_add * numpy.ones((1*dimctx)).astype(floatX)
+            params[pp(prefix,'W_comb_att_lns')] = scale_mul * numpy.ones((1*dimctx)).astype(floatX)
+            params[pp(prefix,'Wc_att_lnb')] = scale_add * numpy.ones((1*dimctx)).astype(floatX)
+            params[pp(prefix,'Wc_att_lns')] = scale_mul * numpy.ones((1*dimctx)).astype(floatX)
+        if options['weight_normalisation']:
+            params[pp(prefix,'W_wns')] = scale_mul * numpy.ones((2*dim)).astype(floatX)
+            params[pp(prefix,'U_wns')] = scale_mul * numpy.ones((2*dim)).astype(floatX)
+            params[pp(prefix,'Wx_wns')] = scale_mul * numpy.ones((1*dim)).astype(floatX)
+            params[pp(prefix,'Ux_wns')] = scale_mul * numpy.ones((1*dim)).astype(floatX)
+            params[pp(prefix,'W_comb_att_wns')] = scale_mul * numpy.ones((1*dimctx)).astype(floatX)
+            params[pp(prefix,'Wc_att_wns')] = scale_mul * numpy.ones((1*dimctx)).astype(floatX)
+            params[pp(prefix,'U_att_wns')] = scale_mul * numpy.ones((1*1)).astype(floatX)
+
+    return params
+
 def gru_cond_2_decoders_layer(tparams, state_below_fs, state_below_factors, options, dropout, prefix='gru',
                    mask=None, context=None, one_step=False,
                    init_memory=None, init_state=None,init_state_factors=None,
@@ -714,15 +826,15 @@ def gru_cond_2_decoders_layer(tparams, state_below_fs, state_below_factors, opti
         return _x[:, n*dim:(n+1)*dim]
 
     # state_below is the previous output word embedding
-    state_belowx_fs = tensor.dot(state_below_fs*below_dropout[0], wn(pp(prefix, 'Wx'))) +\
-        tparams[pp(prefix, 'bx')]
-    state_below__fs = tensor.dot(state_below_fs*below_dropout[1], wn(pp(prefix, 'W'))) +\
-        tparams[pp(prefix, 'b')]
+    state_belowx_fs = tensor.dot(state_below_fs*below_dropout[0], wn( pp3(prefix,'fs','Wx') )) +\
+        tparams[pp3(prefix,'fs', 'bx')]
+    state_below__fs = tensor.dot(state_below_fs*below_dropout[1], wn(pp3(prefix,'fs', 'W'))) +\
+        tparams[pp3(prefix,'fs', 'b')]
 
-    state_belowx_factors = tensor.dot(state_below_factors*below_dropout[0], wn(pp(prefix, 'Wx'))) +\
-        tparams[pp(prefix, 'bx')]
-    state_below__factors = tensor.dot(state_below_factors*below_dropout[1], wn(pp(prefix, 'W'))) +\
-        tparams[pp(prefix, 'b')]
+    state_belowx_factors = tensor.dot(state_below_factors*below_dropout[0], wn(pp3(prefix, 'factors','Wx'))) +\
+        tparams[pp3(prefix,'factors', 'bx')]
+    state_below__factors = tensor.dot(state_below_factors*below_dropout[1], wn(pp3(prefix,'factors', 'W'))) +\
+        tparams[pp3(prefix, 'factors', 'b')]
 
     def _step_slice(m_, x_, xx_, h_, ctx_, alpha_, pctx_, cc_, rec_dropout, ctx_dropout, factor_prefix):
         if options['layer_normalisation']:
@@ -799,14 +911,14 @@ def gru_cond_2_decoders_layer(tparams, state_below_fs, state_below_factors, opti
         return h2, ctx_, alpha.T  # pstate_, preact, preactx, r, u
 
     def _step_slice_dual(m_, x_fs,x_factors, xx_fs,xx_factors, h_fs,h_factors, ctx__fs,ctx__factors, alpha_fs,alpha_factors, pctx_, cc_, rec_dropout, ctx_dropout):
-        #TODO:Combine previous states:
-        h_input_factors=None
+        #Combine previous states:
+        h_input_factors=get_layer_constr('ff')(tparams, concatenate([h_fs,h_factors],axis=1), options, dropout, prefix='prev_state_factors')
 
         #1 step for factors
         newh_factors,new_ctx_factors,new_alpha_factors= _step_slice(m_, x_factors, xx_factors, h_input_factors, ctx__factors, alpha_factors, pctx_, cc_, rec_dropout, ctx_dropout, "factors"):
 
-        #TODO:Combine previous states:
-        h_input_fs=None
+        #Combine previous states:
+        h_input_fs=get_layer_constr('ff')(tparams, concatenate([h_fs,newh_factors],axis=1), options, dropout, prefix='prev_state_fs')
 
         #1 step for fs
         newh_fs,new_ctx_fs,new_alpha_fs= _step_slice(m_, x_fs, xx_fs, h_input_fs, ctx__fs, alpha_fs, pctx_, cc_, rec_dropout, ctx_dropout, "fs"):
