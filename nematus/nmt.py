@@ -777,7 +777,7 @@ def build_decoders_connection_state(tparams, options, y, y_factors, ctx, init_st
 
     #TODO: loop over different dropouts? and pctx_?
     return_list=[]
-    for factor_suffix,emb_local,y_local, opt_ret_local, next_state_local, ctxs_local in [ ['',emb,y,opt_ret,next_state_fs,ctxs_fs] ,['_factor1',emb_factors,y_factors,opt_ret_factors,next_state_factors,ctxs_factors] ]:
+    for factor_suffix,emb_local,y_local, opt_ret_local, next_state_local, ctxs_local, ret_state_local in [ ['',emb,y,opt_ret,next_state_fs,ctxs_fs, ret_state_fs] ,['_factor1',emb_factors,y_factors,opt_ret_factors,next_state_factors,ctxs_factors, ret_state_factors] ]:
     #for factor_suffix,emb_local,init_state_local,y_local, opt_ret_local in [ ['',emb,init_state,y,opt_ret] ,['_factor1',emb_factors,init_state_factors,y_factors,opt_ret_factors] ]:
         # decoder - pass through the decoder conditional gru with attention
 
@@ -799,7 +799,7 @@ def build_decoders_connection_state(tparams, options, y, y_factors, ctx, init_st
         logit = get_layer_constr('ff')(tparams, logit, options, dropout,
                                 dropout_probability=options['dropout_hidden'],
                                 prefix='ff_logit'+factor_suffix, activ='linear', W=logit_W, followed_by_softmax=True)
-        return_list.extend([logit, opt_ret_local, ret_state])
+        return_list.extend([logit, opt_ret_local, ret_state_local])
 
     return return_list
 
