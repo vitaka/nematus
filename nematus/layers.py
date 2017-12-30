@@ -924,7 +924,7 @@ def gru_cond_2_decoders_layer(tparams, state_below_fs, state_below_factors, opti
         h_input_fs=get_layer_constr('ff')(tparams, concatenate([h_fs,newh_factors],axis=1), options, dropout, prefix='prev_state_fs')
 
         #1 step for fs
-        newh_fs,new_ctx_fs,new_alpha_fs= _step_slice(m_, x_fs, xx_fs, h_input_fs, ctx__fs, alpha_fs, pctx_, cc_, rec_dropout, ctx_dropout, "fs"):
+        newh_fs,new_ctx_fs,new_alpha_fs= _step_slice(m_, x_fs, xx_fs, h_input_fs, ctx__fs, alpha_fs, pctx_, cc_, rec_dropout, ctx_dropout, "fs")
 
         return newh_fs,newh_factors,new_ctx_fs,new_ctx_factors,new_alpha_fs,new_alpha_factors
 
