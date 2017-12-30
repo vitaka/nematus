@@ -109,7 +109,7 @@ def init_params(options):
     params = get_layer_param('embedding')(options, params, options['n_words_src'], options['dim_per_factor'], options['factors'], suffix='')
     if not options['tie_encoder_decoder_embeddings']:
         params = get_layer_param('embedding')(options, params, options['n_words'], options['dim_word'], suffix='_dec')
-        if options['multiple_decoders_connection_feedback']:
+        if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
             params = get_layer_param('embedding')(options, params, options['n_words_factor1'], options['dim_word'], suffix='_dec_factor1')
 
 
@@ -158,19 +158,31 @@ def init_params(options):
     params = get_layer_param('ff')(options, params, prefix='ff_state',
                                 nin=ctxdim, nout=dec_state)
 
-    if options['multiple_decoders_connection_feedback']:
+    if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
         # init_state, init_cell
         params = get_layer_param('ff')(options, params, prefix='ff_state_factor1',
                                     nin=ctxdim, nout=dec_state)
 
-        if not options['combination_sf_factors_concat'] :
+        if options['multiple_decoders_connection_feedback'] and not options['combination_sf_factors_concat'] :
             #Feedback to the decoders
             params = get_layer_param('ff')(options, params, prefix='feedback_fs',nin=options['dim_word']*2, nout=options['dim_word'])
             params = get_layer_param('ff')(options, params, prefix='feedback_factors',nin=options['dim_word']*2, nout=options['dim_word'])
 
+        if options['multiple_decoders_connection_state'] and not options['combination_sf_factors_concat']:
+            params = get_layer_param('ff')(options, params, prefix='prev_state_fs',nin=options['dim']*2, nout=options['dim'])
+            params = get_layer_param('ff')(options, params, prefix='prev_state_factors',nin=options['dim']*2, nout=options['dim'])
+
 
     # decoder
-    params = get_layer_param(options['decoder'])(options, params,
+    if  options['multiple_decoders_connection_state']:
+        params = param_init_gru_cond_2_decoders(options, params,
+                                              prefix='decoder',
+                                              nin=options['dim_word'],
+                                              dim=options['dim'],
+                                              dimctx=ctxdim,
+                                              recurrence_transition_depth=options['dec_base_recurrence_transition_depth'])
+    else:
+        params = get_layer_param(options['decoder'])(options, params,
                                               prefix='decoder',
                                               nin=options['dim_word']*2 if options['multiple_decoders_connection_feedback'] and options['combination_sf_factors_concat'] else options['dim_word'],
                                               dim=options['dim'],
@@ -199,7 +211,7 @@ def init_params(options):
                                             dim=options['dim'],
                                             dimctx=ctxdim,
                                             recurrence_transition_depth=options['dec_high_recurrence_transition_depth'])
-            if options['multiple_decoders_connection_feedback']:
+            if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
                 params = get_layer_param(options['decoder_deep'])(options, params,
                                                 prefix=pp('decoder_factor1', level),
                                                 nin=input_dim,
@@ -223,7 +235,7 @@ def init_params(options):
                                 nout=options['n_words'],
                                 weight_matrix = not options['tie_decoder_embeddings'],
                                 followed_by_softmax=True)
-    if options['multiple_decoders_connection_feedback']:
+    if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
         params = get_layer_param('ff')(options, params, prefix='ff_logit_lstm_factor1',
                                     nin=options['dim'], nout=options['dim_word'],
                                     ortho=False)
@@ -677,6 +689,120 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
 
     return return_list
 
+def build_decoders_connection_state(tparams, options, y, y_factors, ctx, init_state, init_state_factors, dropout, x_mask=None, y_mask=None, sampling=False, pctx_=None, shared_vars=None):
+    opt_ret = dict()
+    opt_ret_factors = dict()
+
+    # tell RNN whether to advance just one step at a time (for sampling),
+    # or loop through sequence (for training)
+    if sampling:
+        one_step=True
+    else:
+        one_step=False
+
+    if options['use_dropout']:
+        if sampling:
+            target_dropout = dropout(dropout_probability=options['dropout_target'])
+        else:
+            n_timesteps_trg = y.shape[0]
+            n_samples = y.shape[1]
+            target_dropout = dropout((n_timesteps_trg, n_samples, 1), options['dropout_target'])
+            target_dropout = tensor.tile(target_dropout, (1, 1, options['dim_word']))
+
+    #y: dims: maxlen x size_batch
+    #emb dims: maxlen x size_batch x emb_size
+
+    # word embedding (target), we will shift the target sequence one time step
+    # to the right. This is done because of the bi-gram connections in the
+    # readout and decoder rnn. The first target will be all zeros and we will
+    # not condition on the last output.
+    decoder_embedding_suffix = '' if options['tie_encoder_decoder_embeddings'] else '_dec'
+    emb = get_layer_constr('embedding')(tparams, y, suffix=decoder_embedding_suffix)
+    emb_factors = get_layer_constr('embedding')(tparams, y_factors,suffix=decoder_embedding_suffix+'_factor1')
+    if options['use_dropout']:
+        emb *= target_dropout
+        emb_factors *= target_dropout #TODO: duplicate?
+
+    if sampling:
+        emb = tensor.switch(y[:, None] < 0,
+            tensor.zeros((1, options['dim_word'])),
+            emb)
+        emb_factors = tensor.switch(y_factors[:, None] < 0,
+            tensor.zeros((1, options['dim_word'])),
+            emb_factors)
+
+    else:
+        emb_shifted = tensor.zeros_like(emb)
+        emb_shifted = tensor.set_subtensor(emb_shifted[1:], emb[:-1])
+        emb = emb_shifted
+
+        emb_factors_shifted = tensor.zeros_like(emb_factors)
+        emb_factors_shifted = tensor.set_subtensor(emb_factors_shifted[1:], emb_factors[:-1])
+        emb_factors = emb_factors_shifted
+
+    proj = gru_cond_2_decoders_layer(tparams, emb,emb_factors, options, dropout,
+                                            prefix='decoder',
+                                            mask=y_mask, context=ctx,
+                                            context_mask=x_mask,
+                                            pctx_=pctx_,
+                                            one_step=one_step,
+                                            init_state=init_state,
+                                            init_state_factors=init_state_factors,
+                                            recurrence_transition_depth=options['dec_base_recurrence_transition_depth'],
+                                            dropout_probability_below=options['dropout_embedding'],
+                                            dropout_probability_ctx=options['dropout_hidden'],
+                                            dropout_probability_rec=options['dropout_hidden'],
+                                            truncate_gradient=options['decoder_truncate_gradient'],
+                                            profile=profile)
+    next_state_fs=proj[0]
+    ctxs_fs=proj[1]
+    opt_ret['dec_alphas'] = proj[2]
+    next_state_factors=proj[3]
+    ctxs_factors=proj[4]
+    opt_ret_factors['dec_alphas'] = proj[5]
+
+    if sampling:
+        ret_state_fs = [next_state_fs.reshape((1, next_state_fs.shape[0], next_state_fs.shape[1]))]
+        ret_state_factors = [next_state_factors.reshape((1, next_state_factors.shape[0], next_state_factors.shape[1]))]
+        ret_state_fs = ret_state_fs[0]
+        ret_state_factors = ret_state_factors[0]
+    else:
+        ret_state_fs = None
+        ret_state_factors = None
+
+    if options['dec_depth'] > 1:
+        assert False, "deep decoding not supported in factored TL set-up"
+    if options['decoder'].startswith('lstm'):
+        assert False, "LSTM not supported in factored TL set-up"
+
+    #TODO: loop over different dropouts? and pctx_?
+    return_list=[]
+    for factor_suffix,emb_local,y_local, opt_ret_local, next_state_local, ctxs_local in [ ['',emb,y,opt_ret,next_state_fs,ctxs_fs] ,['_factor1',emb_factors,y_factors,opt_ret_factors,next_state_factors,ctxs_factors] ]:
+    #for factor_suffix,emb_local,init_state_local,y_local, opt_ret_local in [ ['',emb,init_state,y,opt_ret] ,['_factor1',emb_factors,init_state_factors,y_factors,opt_ret_factors] ]:
+        # decoder - pass through the decoder conditional gru with attention
+
+        # hidden layer taking RNN state, previous word embedding and context vector as input
+        # (this counts as the first layer in our deep output, which is always on)
+        logit_lstm = get_layer_constr('ff')(tparams, next_state_local, options, dropout,
+                                        dropout_probability=options['dropout_hidden'],
+                                        prefix='ff_logit_lstm'+factor_suffix, activ='linear')
+        logit_prev = get_layer_constr('ff')(tparams, emb_local, options, dropout,
+                                        dropout_probability=options['dropout_embedding'],
+                                        prefix='ff_logit_prev'+factor_suffix, activ='linear')
+        logit_ctx = get_layer_constr('ff')(tparams, ctxs_local, options, dropout,
+                                       dropout_probability=options['dropout_hidden'],
+                                       prefix='ff_logit_ctx'+factor_suffix, activ='linear')
+        logit = tensor.tanh(logit_lstm+logit_prev+logit_ctx)
+
+        # last layer
+        logit_W = tparams['Wemb' + decoder_embedding_suffix].T if options['tie_decoder_embeddings'] else None
+        logit = get_layer_constr('ff')(tparams, logit, options, dropout,
+                                dropout_probability=options['dropout_hidden'],
+                                prefix='ff_logit'+factor_suffix, activ='linear', W=logit_W, followed_by_softmax=True)
+        return_list.extend([logit, opt_ret_local, ret_state])
+
+    return return_list
+
 # build a training model
 def build_model(tparams, options):
 
@@ -686,7 +812,7 @@ def build_model(tparams, options):
 
     x_mask = tensor.matrix('x_mask', dtype=floatX)
     y = tensor.matrix('y', dtype='int64')
-    if ['multiple_decoders_connection_feedback']:
+    if ['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
         y_factors = tensor.matrix('y_factors', dtype='int64')
     else:
         y_factors=None
@@ -729,6 +855,18 @@ def build_model(tparams, options):
             init_state_factors = tensor.tile(init_state_factors, (options['dec_depth'], 1, 1))
 
         logit, opt_ret, _, logit_factors, opt_ret_factors, _ = build_decoders_connection_feedback(tparams, options, y, y_factors , ctx, init_state, init_state_factors , dropout, x_mask=x_mask, y_mask=y_mask, sampling=False)
+    elif options['multiple_decoders_connection_state']:
+        # initial decoder state for the factors decoder, TODO: dropout?
+        init_state_factors = get_layer_constr('ff')(tparams, ctx_mean, options, dropout,
+                                        dropout_probability=options['dropout_hidden'],
+                                        prefix='ff_state_factor1', activ='tanh')
+
+        # every decoder RNN layer gets its own copy of the init state
+        init_state_factors = init_state_factors.reshape([1, init_state_factors.shape[0], init_state_factors.shape[1]])
+        if options['dec_depth'] > 1:
+            init_state_factors = tensor.tile(init_state_factors, (options['dec_depth'], 1, 1))
+
+        logit, opt_ret, _, logit_factors, opt_ret_factors, _ = build_decoders_connection_state(tparams, options, y, y_factors , ctx, init_state, init_state_factors , dropout, x_mask=x_mask, y_mask=y_mask, sampling=False)
     else:
         logit, opt_ret, _ = build_decoder(tparams, options, y, ctx, init_state, dropout, x_mask=x_mask, y_mask=y_mask, sampling=False)
 
@@ -743,7 +881,7 @@ def build_model(tparams, options):
     cost = (cost * y_mask).sum(0)
 
     cost_factors=None
-    if options['multiple_decoders_connection_feedback']:
+    if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
         logit_shp = logit_factors.shape
         probs = tensor.nnet.softmax(logit_factors.reshape([logit_shp[0]*logit_shp[1],
                                                logit_shp[2]]))
@@ -786,7 +924,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     if options['dec_depth'] > 1:
         init_state = tensor.tile(init_state, (options['dec_depth'], 1, 1))
 
-    if options['multiple_decoders_connection_feedback']:
+    if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
         # initial decoder state for the factors decoder, TODO: dropout?
         init_state_factors = get_layer_constr('ff')(tparams, ctx_mean, options, dropout,
                                         dropout_probability=options['dropout_hidden'],
@@ -799,7 +937,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
 
     logging.info('Building f_init...')
 
-    if options['multiple_decoders_connection_feedback']:
+    if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
         outs = [init_state, ctx, init_state_factors]
         f_init = theano.function([x], outs, name='f_init', profile=profile)
     else:
@@ -815,13 +953,15 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     if theano.config.compute_test_value != 'off':
         init_state.tag.test_value = numpy.random.rand(*init_state_old.tag.test_value.shape).astype(floatX)
 
-    if options['multiple_decoders_connection_feedback']:
+    if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
         y_factors = tensor.vector('y_factors_sampler', dtype='int64')
         init_state_factors_old = init_state_factors
         init_state_factors = tensor.tensor3('init_state_factors', dtype=floatX)
 
     if options['multiple_decoders_connection_feedback']:
         logit, opt_ret, ret_state, logit_factors, opt_ret_factors, ret_state_factors = build_decoders_connection_feedback(tparams, options, y, y_factors , ctx, init_state, init_state_factors , dropout, x_mask=None, y_mask=None, sampling=True)
+    elif options['multiple_decoders_connection_state']:
+        logit, opt_ret, ret_state, logit_factors, opt_ret_factors, ret_state_factors = build_decoders_connection_state(tparams, options, y, y_factors , ctx, init_state, init_state_factors , dropout, x_mask=None, y_mask=None, sampling=True)
     else:
         logit, opt_ret, ret_state = build_decoder(tparams, options, y, ctx, init_state, dropout, x_mask=None, y_mask=None, sampling=True)
 
@@ -831,7 +971,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     # sample from softmax distribution to get the sample
     next_sample = trng.multinomial(pvals=next_probs).argmax(1)
 
-    if options['multiple_decoders_connection_feedback']:
+    if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
         # compute the softmax probability
         next_probs_factors = tensor.nnet.softmax(logit_factors)
 
@@ -842,7 +982,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     # sampled word for the next target, next hidden state to be used
     logging.info('Building f_next..')
     inps = [y]
-    if options['multiple_decoders_connection_feedback']:
+    if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
         inps.append(y_factors)
     inps.extend([ ctx, init_state])
     outs = [next_probs, next_sample, ret_state]
@@ -854,7 +994,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     logging.info('Done')
 
     f_next_factors=None
-    if options['multiple_decoders_connection_feedback']:
+    if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
         inps=[y,y_factors,ctx,init_state_factors]
         outs=[next_probs_factors, next_sample_factors, ret_state_factors]
         if return_alignment:
@@ -1375,7 +1515,7 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
             logging.error('Mismatch between number of factors in settings ({0}), and number in validation corpus ({1})\n'.format(options['factors'], len(x[0][0])))
             sys.exit(1)
         if len(y) and len(y[0]) and len(y[0][0]) > 1:
-            if not options['multiple_decoders_connection_feedback']:
+            if not options['multiple_decoders_connection_feedback'] and not options['multiple_decoders_connection_state']:
                 logging.error('Mismatch between number of TL factors in settings, and number in training corpus ({0})\n'.format(len(y[0][0])))
                 sys.exit(1)
 
@@ -1384,21 +1524,21 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
         x, x_mask, y, y_factors, y_mask = prepare_data(x, y,
                                             n_words_src=options['n_words_src'],
                                             n_words=options['n_words'],
-                                            n_factors=options['factors'],interleave_tl=options["interleave_tl"], factors_tl=options['multiple_decoders_connection_feedback'])
+                                            n_factors=options['factors'],interleave_tl=options["interleave_tl"], factors_tl=options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state'])
         logging.debug("Read validation Minibatch x: {}".format(x))
         logging.debug("Read validation Minibatch y: {}".format(y))
         logging.debug("Read validation Minibatch y_factors: {}".format(y_factors))
 
         ### in optional save weights mode.
         if alignweights:
-            if options['multiple_decoders_connection_feedback']:
+            if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
                 pprobs, attention, pprobs_sf, pprobs_factors = f_log_probs(x, x_mask, y, y_factors, y_mask)
             else:
                 pprobs, attention = f_log_probs(x, x_mask, y, y_mask)
             for jdata in get_alignments(attention, x_mask, y_mask):
                 alignments_json.append(jdata)
         else:
-            if options['multiple_decoders_connection_feedback']:
+            if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
                 pprobs, pprobs_sf, pprobs_factors = f_log_probs(x, x_mask, y, y_factors,y_mask)
             else:
                 pprobs = f_log_probs(x, x_mask, y, y_mask)
@@ -1594,7 +1734,7 @@ def train(dim_word=512,  # word vector dimensionality
             logging.error('Error: if using factored input, you must specify \'dim_per_factor\'\n')
             sys.exit(1)
 
-    if model_options['multiple_decoders_connection_feedback']:
+    if model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']:
         assert(len(dictionaries) == factors + 2)
         assert(model_options['n_words_factor1'] != None)
     else:
@@ -1704,7 +1844,7 @@ def train(dim_word=512,  # word vector dimensionality
                          maxibatch_size=maxibatch_size)
     else:
         train = TextIterator(datasets[0], datasets[1],
-                         dictionaries[:-2] if model_options['multiple_decoders_connection_feedback'] else dictionaries[:-1], dictionaries[-2:] if model_options['multiple_decoders_connection_feedback'] else dictionaries[-1],
+                         dictionaries[:-2] if (model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']) else dictionaries[:-1], dictionaries[-2:] if (model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']) else dictionaries[-1],
                          n_words_source=n_words_src, n_words_target=n_words,
                          batch_size=batch_size,
                          maxlen=maxlen,
@@ -1712,15 +1852,15 @@ def train(dim_word=512,  # word vector dimensionality
                          shuffle_each_epoch=shuffle_each_epoch,
                          sort_by_length=sort_by_length,
                          use_factor=(factors > 1),
-                         maxibatch_size=maxibatch_size,interleave_tl=interleave_tl,use_factor_tl=model_options['multiple_decoders_connection_feedback'])
+                         maxibatch_size=maxibatch_size,interleave_tl=interleave_tl,use_factor_tl=model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state'])
 
     if valid_datasets and validFreq:
         valid = TextIterator(valid_datasets[0], valid_datasets[1],
-                            dictionaries[:-2] if model_options['multiple_decoders_connection_feedback'] else dictionaries[:-1], dictionaries[-2:] if model_options['multiple_decoders_connection_feedback'] else dictionaries[-1],
+                            dictionaries[:-2] if (model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']) else dictionaries[:-1], dictionaries[-2:] if (model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']) else dictionaries[-1],
                             n_words_source=n_words_src, n_words_target=n_words,
                             batch_size=valid_batch_size,
                             use_factor=(factors>1),
-                            maxlen=maxlen,interleave_tl=interleave_tl,use_factor_tl=model_options['multiple_decoders_connection_feedback'])
+                            maxlen=maxlen,interleave_tl=interleave_tl,use_factor_tl=model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state'])
     else:
         valid = None
 
@@ -1758,7 +1898,7 @@ def train(dim_word=512,  # word vector dimensionality
         cost, cost_sf, cost_factors = \
         build_model(tparams, model_options)
 
-    if model_options['multiple_decoders_connection_feedback']:
+    if model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']:
         inps = [x, x_mask, y, y_factors, y_mask]
     else:
         inps = [x, x_mask, y, y_mask]
@@ -1772,7 +1912,7 @@ def train(dim_word=512,  # word vector dimensionality
 
     # before any regularizer
     logging.info('Building f_log_probs...')
-    if model_options['multiple_decoders_connection_feedback']:
+    if model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']:
         f_log_probs = theano.function(inps, [cost, cost_sf, cost_factors], profile=profile)
     else:
         f_log_probs = theano.function(inps, cost, profile=profile)
@@ -1887,7 +2027,7 @@ def train(dim_word=512,  # word vector dimensionality
                 logging.error('Mismatch between number of factors in settings ({0}), and number in training corpus ({1})\n'.format(factors, len(x[0][0])))
                 sys.exit(1)
             if len(y) and len(y[0]) and not isinstance(y[0][0], (int, long)) and len(y[0][0]) > 1:
-                if not model_options['multiple_decoders_connection_feedback']:
+                if not model_options['multiple_decoders_connection_feedback'] and not model_options['multiple_decoders_connection_state']:
                     logging.error('Mismatch between number of TL factors in settings, and number in training corpus ({0})\n'.format(len(y[0][0])))
                     sys.exit(1)
 
@@ -1907,7 +2047,7 @@ def train(dim_word=512,  # word vector dimensionality
                                                                     maxlen=maxlen,
                                                                     n_factors=factors,
                                                                     n_words_src=n_words_src,
-                                                                    n_words=n_words,interleave_tl=interleave_tl, factors_tl=model_options['multiple_decoders_connection_feedback'])
+                                                                    n_words=n_words,interleave_tl=interleave_tl, factors_tl=model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state'])
 
                 logging.debug("Read Minibatch x: {}".format(x))
                 logging.debug("Read Minibatch y: {}".format(y))
@@ -1926,7 +2066,7 @@ def train(dim_word=512,  # word vector dimensionality
                 if model_options['objective'] == 'RAML':
                     cost = f_update(lrate, x, x_mask, y, y_mask, sample_weights)
                 else:
-                    if model_options['multiple_decoders_connection_feedback']:
+                    if model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']:
                         cost = f_update(lrate, x, x_mask, y, y_factors, y_mask)
                     else:
                         cost = f_update(lrate, x, x_mask, y, y_mask)
@@ -2135,7 +2275,7 @@ def train(dim_word=512,  # word vector dimensionality
                 valid_errs, valid_errs_sf, valid_errs_factors, alignment = pred_probs(f_log_probs, prepare_data,
                                         model_options, valid)
                 valid_err = valid_errs.mean()
-                if model_options['multiple_decoders_connection_feedback']:
+                if model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']:
                     valid_err_sf = valid_errs_sf.mean()
                     valid_err_factors = valid_errs_factors.mean()
                     valid_err_for_comparison=valid_err
@@ -2180,7 +2320,7 @@ def train(dim_word=512,  # word vector dimensionality
                         # stop
                         else:
                             logging.info('Valid {}'.format(valid_err))
-                            if model_options['multiple_decoders_connection_feedback']:
+                            if model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']:
                                 logging.info('Valid_sf {}'.format(valid_err_sf))
                                 logging.info('Valid_factors {}'.format(valid_err_factors))
                             logging.info('Early Stop!')
@@ -2189,7 +2329,7 @@ def train(dim_word=512,  # word vector dimensionality
 
                 logging.info('Valid {}'.format(valid_err))
 
-                if model_options['multiple_decoders_connection_feedback']:
+                if model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']:
                     valid_err_sf = valid_errs_sf.mean()
                     valid_err_factors = valid_errs_factors.mean()
                     logging.info('Valid_sf {}'.format(valid_err_sf))
@@ -2233,7 +2373,7 @@ def train(dim_word=512,  # word vector dimensionality
         valid_err = valid_errs.mean()
 
         logging.info('Valid {}'.format(valid_err))
-        if model_options['multiple_decoders_connection_feedback']:
+        if model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']:
             valid_err_sf = valid_errs_sf.mean()
             valid_err_factors = valid_errs_factors.mean()
             logging.info('Valid_sf {}'.format(valid_err_sf))
