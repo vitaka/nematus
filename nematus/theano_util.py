@@ -50,6 +50,10 @@ def itemlist(tparams):
 def pp(pp, name):
     return '%s_%s' % (pp, name)
 
+def pp3(pp, pp2, name):
+    return '%s_%s_%s' % (pp, pp2, name)
+
+
 # initialize Theano shared variables according to the initial parameters
 def init_theano_params(params):
     tparams = OrderedDict()
