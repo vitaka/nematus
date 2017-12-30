@@ -789,7 +789,7 @@ def gru_cond_2_decoders_layer(tparams, state_below_fs, state_below_factors, opti
     if mask is None:
         mask = tensor.ones((state_below_fs.shape[0], 1))
 
-    dim = tparams[pp(prefix, 'Wcx')].shape[1]
+    dim = tparams[pp3(prefix, 'fs','Wcx')].shape[1]
 
     rec_dropout = dropout((n_samples, dim), dropout_probability_rec, num= 1 + 2 * recurrence_transition_depth)
 
