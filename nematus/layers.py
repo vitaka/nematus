@@ -813,11 +813,16 @@ def gru_cond_2_decoders_layer(tparams, state_below_fs, state_below_factors, opti
     # projected context
     assert context.ndim == 3, 'Context must be 3-d: #annotation x #sample x dim'
     if pctx_ is None:
-        pctx_ = tensor.dot(context*ctx_dropout[0], wn(pp(prefix, 'Wc_att'))) +\
-            tparams[pp(prefix, 'b_att')]
+        pctx__fs = tensor.dot(context*ctx_dropout[0], wn(pp3(prefix,'fs', 'Wc_att'))) +\
+            tparams[pp3(prefix,'fs', 'b_att')]
+        pctx__factors=tensor.dot(context*ctx_dropout[0], wn(pp3(prefix,'factors', 'Wc_att'))) +\
+            tparams[pp(prefix,'factors', 'b_att')]
+    else:
+        assert False, "external value of pctx_ is not supported"
 
     if options['layer_normalisation']:
-        pctx_ = layer_norm(pctx_, tparams[pp(prefix,'Wc_att_lnb')], tparams[pp(prefix,'Wc_att_lns')])
+        pctx__fs = layer_norm(pctx__fs, tparams[pp3(prefix,'fs','Wc_att_lnb')], tparams[pp3(prefix,'fs','Wc_att_lns')])
+        pctx__factors = layer_norm(pctx__factors, tparams[pp3(prefix,'factors','Wc_att_lnb')], tparams[pp3(prefix,'factors','Wc_att_lns')])
 
     def _slice(_x, n, dim):
         if _x.ndim == 3:
@@ -909,7 +914,7 @@ def gru_cond_2_decoders_layer(tparams, state_below_fs, state_below_factors, opti
 
         return h2, ctx_, alpha.T  # pstate_, preact, preactx, r, u
 
-    def _step_slice_dual(m_, x_fs,x_factors, xx_fs,xx_factors, h_fs,h_factors, ctx__fs,ctx__factors, alpha_fs,alpha_factors, pctx_, cc_, rec_dropout, ctx_dropout):
+    def _step_slice_dual(m_, x_fs,x_factors, xx_fs,xx_factors, h_fs,h_factors, ctx__fs,ctx__factors, alpha_fs,alpha_factors, pctx__fs,pctx__factors, cc_, rec_dropout, ctx_dropout):
 
         if options['combination_sf_factors_concat']:
             assert False, 'concatenation is not supported for combining states'
@@ -918,13 +923,13 @@ def gru_cond_2_decoders_layer(tparams, state_below_fs, state_below_factors, opti
         h_input_factors=get_layer_constr('ff')(tparams, concatenate([h_fs,h_factors],axis=1), options, dropout, prefix='prev_state_factors')
 
         #1 step for factors
-        newh_factors,new_ctx_factors,new_alpha_factors= _step_slice(m_, x_factors, xx_factors, h_input_factors, ctx__factors, alpha_factors, pctx_, cc_, rec_dropout, ctx_dropout, "factors")
+        newh_factors,new_ctx_factors,new_alpha_factors= _step_slice(m_, x_factors, xx_factors, h_input_factors, ctx__factors, alpha_factors, pctx__factors, cc_, rec_dropout, ctx_dropout, "factors")
 
         #Combine previous states:
         h_input_fs=get_layer_constr('ff')(tparams, concatenate([h_fs,newh_factors],axis=1), options, dropout, prefix='prev_state_fs')
 
         #1 step for fs
-        newh_fs,new_ctx_fs,new_alpha_fs= _step_slice(m_, x_fs, xx_fs, h_input_fs, ctx__fs, alpha_fs, pctx_, cc_, rec_dropout, ctx_dropout, "fs")
+        newh_fs,new_ctx_fs,new_alpha_fs= _step_slice(m_, x_fs, xx_fs, h_input_fs, ctx__fs, alpha_fs, pctx__fs, cc_, rec_dropout, ctx_dropout, "fs")
 
         return newh_fs,newh_factors,new_ctx_fs,new_ctx_factors,new_alpha_fs,new_alpha_factors
 
@@ -936,7 +941,7 @@ def gru_cond_2_decoders_layer(tparams, state_below_fs, state_below_factors, opti
     shared_vars = []
 
     if one_step:
-        rval = _step(*(seqs + [init_state,init_state_factors, None, None, None,None, pctx_, context, rec_dropout, ctx_dropout] +
+        rval = _step(*(seqs + [init_state,init_state_factors, None, None, None,None, pctx__fs,pctx__factors, context, rec_dropout, ctx_dropout] +
                        shared_vars))
     else:
         rval, updates = theano.scan(_step,
@@ -950,7 +955,7 @@ def gru_cond_2_decoders_layer(tparams, state_below_fs, state_below_factors, opti
                                                                context.shape[0])),
                                                   tensor.zeros((n_samples,
                                                                context.shape[0]))],
-                                    non_sequences=[pctx_, context, rec_dropout, ctx_dropout]+shared_vars,
+                                    non_sequences=[pctx__fs,pctx__factors, context, rec_dropout, ctx_dropout]+shared_vars,
                                     name=pp(prefix, '_layers'),
                                     n_steps=nsteps,
                                     truncate_gradient=truncate_gradient,
