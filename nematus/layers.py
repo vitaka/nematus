@@ -816,7 +816,7 @@ def gru_cond_2_decoders_layer(tparams, state_below_fs, state_below_factors, opti
         pctx__fs = tensor.dot(context*ctx_dropout[0], wn(pp3(prefix,'fs', 'Wc_att'))) +\
             tparams[pp3(prefix,'fs', 'b_att')]
         pctx__factors=tensor.dot(context*ctx_dropout[0], wn(pp3(prefix,'factors', 'Wc_att'))) +\
-            tparams[pp(prefix,'factors', 'b_att')]
+            tparams[pp3(prefix,'factors', 'b_att')]
     else:
         assert False, "external value of pctx_ is not supported"
 
