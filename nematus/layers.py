@@ -920,13 +920,13 @@ def gru_cond_2_decoders_layer(tparams, state_below_fs, state_below_factors, opti
             assert False, 'concatenation is not supported for combining states'
 
         #Combine previous states:
-        h_input_factors=get_layer_constr('ff')(tparams, concatenate([h_fs,h_factors],axis=2), options, dropout, prefix='prev_state_factors')
+        h_input_factors=get_layer_constr('ff')(tparams, concatenate([h_fs,h_factors],axis=1), options, dropout, prefix='prev_state_factors')
 
         #1 step for factors
         newh_factors,new_ctx_factors,new_alpha_factors= _step_slice(m_, x_factors, xx_factors, h_input_factors, ctx__factors, alpha_factors, pctx__factors, cc_, rec_dropout, ctx_dropout, "factors")
 
         #Combine previous states:
-        h_input_fs=get_layer_constr('ff')(tparams, concatenate([h_fs,newh_factors],axis=2), options, dropout, prefix='prev_state_fs')
+        h_input_fs=get_layer_constr('ff')(tparams, concatenate([h_fs,newh_factors],axis=1), options, dropout, prefix='prev_state_fs')
 
         #1 step for fs
         newh_fs,new_ctx_fs,new_alpha_fs= _step_slice(m_, x_fs, xx_fs, h_input_fs, ctx__fs, alpha_fs, pctx__fs, cc_, rec_dropout, ctx_dropout, "fs")
