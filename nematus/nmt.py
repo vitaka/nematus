@@ -985,7 +985,12 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
         inps.append(y_factors)
     inps.extend([ ctx, init_state])
+    if options['multiple_decoders_connection_state']:
+        #f_next will do all the task when options['multiple_decoders_connection_state']
+        inps.append(init_state_factors);
     outs = [next_probs, next_sample, ret_state]
+    if options['multiple_decoders_connection_state']:
+        outs.extend([next_probs_factors, next_sample_factors, ret_state_factors])
 
     if return_alignment:
         outs.append(opt_ret['dec_alphas'])
@@ -994,7 +999,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     logging.info('Done')
 
     f_next_factors=None
-    if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
+    if options['multiple_decoders_connection_feedback']:
         inps=[y,y_factors,ctx,init_state_factors]
         outs=[next_probs_factors, next_sample_factors, ret_state_factors]
         if return_alignment:
