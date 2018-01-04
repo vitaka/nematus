@@ -755,10 +755,10 @@ def build_decoders_connection_state(tparams, options, y, y_factors, ctx, init_st
                                             truncate_gradient=options['decoder_truncate_gradient'],
                                             profile=profile)
     next_state_fs=proj[0]
-    ctxs_fs=proj[1]
-    opt_ret['dec_alphas'] = proj[2]
-    next_state_factors=proj[3]
-    ctxs_factors=proj[4]
+    ctxs_fs=proj[2]
+    opt_ret['dec_alphas'] = proj[4]
+    next_state_factors=proj[1]
+    ctxs_factors=proj[3]
     opt_ret_factors['dec_alphas'] = proj[5]
 
     if sampling:
