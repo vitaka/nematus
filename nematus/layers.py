@@ -931,7 +931,7 @@ def gru_cond_2_decoders_layer(tparams, state_below_fs, state_below_factors, opti
         #1 step for fs
         newh_fs,new_ctx_fs,new_alpha_fs= _step_slice(m_, x_fs, xx_fs, h_input_fs, ctx__fs, alpha_fs, pctx__fs, cc_, rec_dropout, ctx_dropout, "fs")
 
-        return newh_fs,newh_factors,new_ctx_fs,new_ctx_factors,new_alpha_fs,new_alpha_factors
+        return newh_fs,new_ctx_fs,new_alpha_fs,newh_factors,new_ctx_factors,new_alpha_factors
 
 
     seqs = [mask, state_below__fs,state_below__factors, state_belowx_fs,state_belowx_factors]
