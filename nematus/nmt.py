@@ -1140,7 +1140,7 @@ def build_full_sampler(tparams, options, use_noise, trng, greedy=False):
 # this function iteratively calls f_init and f_next functions.
 def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                stochastic=True, argmax=False, return_alignment=False, suppress_unk=False,
-               return_hyp_graph=False, f_next_factors=None, alternate_factors_fs=False, debug=False):
+               return_hyp_graph=False, f_next_factors=None, alternate_factors_fs=False, forced_y_factors=None,debug=False):
 
     # k is the beam size we have
     if k > 1 and argmax:
@@ -1222,6 +1222,15 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
 
                 if suppress_unk:
                     next_p[i][:,1] = -numpy.inf
+                if forced_y_factors:
+                    for w in xrange(next_p[i][0].shape[-1]):
+                        if  ii < len(forced_y_factors):
+                            if w != forced_y_factors[ii]:
+                                next_p[i][:,w] = -numpy.inf
+                        else:
+                            if w > 0:
+                                next_p[i][:,w] = -numpy.inf
+
             if debug:
                 print >>sys.stderr,"factors, next_p, model 0 for each hypothesis"
                 for debug_i,row in enumerate(next_p[0]):
