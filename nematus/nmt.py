@@ -1235,6 +1235,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 print >>sys.stderr,"factors, next_p, model 0 for each hypothesis"
                 for debug_i,row in enumerate(next_p[0]):
                     print >> sys.stderr,"  hyp {} sample (score = {} ): {}, last next_w: {}, last next_w_factors: {} ".format(debug_i,hyp_scores[debug_i],hyp_samples[debug_i],next_w[debug_i], next_w_factors[debug_i])
+                    print >> sys.stderr,"  hyp {}, state factors decoder: ".format(debug_i,next_state_factors[0][debug_i][:20])
+                    print >> sys.stderr,"  hyp {}, state sf decoder: ".format(debug_i,next_state[0][debug_i][:20])
                     for word_id, value in enumerate(row):
                         if value > 0.1:
                             print >>sys.stderr,"    {}: {} [log: {}]".format(word_id,value, math.log(value))
@@ -1356,6 +1358,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             print >>sys.stderr,"surface forms, next_p, model 0 for each hypothesis"
             for debug_i,row in enumerate(next_p[0]):
                 print >> sys.stderr,"  hyp {} sample (score = {} ): {}, last next_w: {}, last next_w_factors: {} ".format(debug_i,hyp_scores[debug_i],hyp_samples[debug_i],next_w[debug_i], next_w_factors[debug_i])
+                print >> sys.stderr,"  hyp {}, state factors decoder: ".format(debug_i,next_state_factors[0][debug_i][:20])
+                print >> sys.stderr,"  hyp {}, state sf decoder: ".format(debug_i,next_state[0][debug_i][:20])
                 for word_id, value in enumerate(row):
                     if value > 0.1:
                         print >>sys.stderr,"    {}: {} [log: {} ]".format(word_id,value, math.log(value))
