@@ -73,6 +73,7 @@ class TranslationSettings(BaseSettings):
                                   help="Normalize scores by sentence length (with argument, exponentiate lengths by ALPHA)")
         self._parser.add_argument('-c', dest='char_level', action="store_true", help="Character-level")
 
+
         if self._from_console_arguments: # don't open files if no console arguments are parsed
             self._parser.add_argument('--input', '-i', type=argparse.FileType('r'),
                                       default=sys.stdin, metavar='PATH',
@@ -101,6 +102,8 @@ class TranslationSettings(BaseSettings):
                                   help="If non-zero, target should be no longer than this ratio of source (default: %(default)s).")
         self._parser.add_argument('--debug', action="store_true",
                                   help="Prints additional debug information on stderr")
+        self._parser.add_argument('--weight_probs_factors', dest='weight_probs_factors', type=float, default=None,
+                                  help="multiply probs of factors by this alpha value, probs of sf by (1-alpha)")
 
     def _set_additional_vars(self):
         self.request_id = uuid.uuid4()

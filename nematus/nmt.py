@@ -1141,7 +1141,7 @@ def build_full_sampler(tparams, options, use_noise, trng, greedy=False):
 # this function iteratively calls f_init and f_next functions.
 def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                stochastic=True, argmax=False, return_alignment=False, suppress_unk=False,
-               return_hyp_graph=False, f_next_factors=None, alternate_factors_fs=False, forced_y_factors=None, max_cands_node=0, debug=False):
+               return_hyp_graph=False, f_next_factors=None, alternate_factors_fs=False, forced_y_factors=None, max_cands_node=0, weight_probs_factors=None,debug=False):
 
     # k is the beam size we have
     if k > 1 and argmax:
@@ -1231,6 +1231,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                         else:
                             if w > 0:
                                 next_p[i][:,w] = -numpy.inf
+                if weight_probs_factors != None:
+                    next_p[i]=next_p[i]*weight_probs_factors
 
             if debug:
                 print >>sys.stderr,"factors, next_p, model 0 for each hypothesis"
@@ -1267,7 +1269,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             word_indices = ranks_flat % voc_size
             #scores of the new k_best hypotheses
             costs = cand_flat[ranks_flat]
-            
+
             if debug:
                 print >>sys.stderr, "trans_indices: {}".format(trans_indices)
 
@@ -1374,6 +1376,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
 
             if suppress_unk:
                 next_p[i][:,1] = -numpy.inf
+            if alternate_factors_fs and weight_probs_factors != None:
+                next_p[i]=next_p[i]*(1-weight_probs_factors)
 
         if debug:
             print >>sys.stderr,"surface forms, next_p, model 0 for each hypothesis"
