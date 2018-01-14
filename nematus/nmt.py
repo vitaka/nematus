@@ -23,6 +23,7 @@ import itertools
 from subprocess import Popen
 
 from collections import OrderedDict
+from collections import defaultdict
 
 profile = False
 
@@ -1140,7 +1141,7 @@ def build_full_sampler(tparams, options, use_noise, trng, greedy=False):
 # this function iteratively calls f_init and f_next functions.
 def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                stochastic=True, argmax=False, return_alignment=False, suppress_unk=False,
-               return_hyp_graph=False, f_next_factors=None, alternate_factors_fs=False, forced_y_factors=None,debug=False):
+               return_hyp_graph=False, f_next_factors=None, alternate_factors_fs=False, forced_y_factors=None, max_cands_node=0, debug=False):
 
     # k is the beam size we have
     if k > 1 and argmax:
@@ -1238,12 +1239,21 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                     for word_id, value in enumerate(row):
                         if value > 0.1:
                             print >>sys.stderr,"    {}: {} [log: {}]".format(word_id,value, math.log(value))
-
+            #next_p : model x hypotheses x voc_size
+            #hyp_scores: hypotheses
+            #cand_scores: hypotheses x voc_size = score of the hypothesis after choosing the corresponding word in next_p
             cand_scores = hyp_scores[:, None] - sum(numpy.log(next_p))
+            #probs: hypotheses x voc_size : probability of next word for each element of vocbaulary and hypothesis
             probs = sum(next_p)/num_models
+            #scores of the hypotheses flattened (1 dimension)
             cand_flat = cand_scores.flatten()
+            #probablity of next word for each element of vocabulary and hypothesis, flattened
             probs_flat = probs.flatten()
+            #Positions in cand_flat of the top k scores
             ranks_flat = cand_flat.argpartition(k-dead_k-1)[:(k-dead_k)]
+
+            if debug:
+                print >>sys.stderr,"cand_flat: {}".format(cand_flat)
 
             #averaging the attention weights accross models
             if return_alignment:
@@ -1251,8 +1261,11 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
 
             voc_size = next_p[0].shape[1]
             # index of each k-best hypothesis
+            #index, in the previous list of k best hypotheses, of the each of new k best hypotheses
             trans_indices = ranks_flat / voc_size
+            #index, in the vocabulary, of the last word of each of the new k best hypotheses
             word_indices = ranks_flat % voc_size
+            #scores of the new k_best hypotheses
             costs = cand_flat[ranks_flat]
 
             new_hyp_samples = []
@@ -1266,7 +1279,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 # at each time step we append the attention weights corresponding to the current target word
                 new_hyp_alignment = [[] for _ in xrange(k-dead_k)]
 
-            # ti -> index of k-best hypothesis
+            #idx: index of new k_best hypothesis
+            # ti -> index of previous k-best hypothesis
             for idx, [ti, wi] in enumerate(zip(trans_indices, word_indices)):
                 new_hyp_samples.append(hyp_samples[ti]+[wi])
                 new_word_probs.append(word_probs[ti] + [probs_flat[ranks_flat[idx]].tolist()])
@@ -1291,6 +1305,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 hyp_alignment = []
 
             # sample and sample_score hold the k-best translations and their scores
+            #dictionary for implementing "Maximum Candidates per Node" filtering
+            previous_hyp_counter=defaultdict(int)
             for idx in xrange(len(new_hyp_samples)):
                 if return_hyp_graph:
                     word, history = new_hyp_samples[idx][-1], new_hyp_samples[idx][:-1]
@@ -1304,6 +1320,9 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                     if return_alignment:
                         alignment.append(new_hyp_alignment[idx])
                     dead_k += 1
+                #maximum candidates per node filtering
+                elif max_cands_node > 0 and previous_hyp_counter[trans_indices[idx]] >= max_cands_node:
+                    dead_k +=1
                 else:
                     new_live_k += 1
                     hyp_samples.append(copy.copy(new_hyp_samples[idx]))
@@ -1313,6 +1332,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                     word_probs.append(new_word_probs[idx])
                     if return_alignment:
                         hyp_alignment.append(new_hyp_alignment[idx])
+                previous_hyp_counter[trans_indices[idx]]+=1
             hyp_scores = numpy.array(hyp_scores)
 
             live_k = new_live_k
@@ -1417,6 +1437,9 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             probs_flat = probs.flatten()
             ranks_flat = cand_flat.argpartition(k-dead_k-1)[:(k-dead_k)]
 
+            if debug:
+                print >>sys.stderr,"cand_flat: {}".format(cand_flat)
+
             #averaging the attention weights accross models
             if return_alignment:
                 mean_alignment = sum(dec_alphas)/num_models
@@ -1463,6 +1486,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 hyp_alignment = []
 
             # sample and sample_score hold the k-best translations and their scores
+            previous_hyp_counter=defaultdict(int)
             for idx in xrange(len(new_hyp_samples)):
                 if return_hyp_graph:
                     word, history = new_hyp_samples[idx][-1], new_hyp_samples[idx][:-1]
@@ -1476,6 +1500,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                     if return_alignment:
                         alignment.append(new_hyp_alignment[idx])
                     dead_k += 1
+                elif max_cands_node > 0 and previous_hyp_counter[trans_indices[idx]] >= max_cands_node:
+                    dead_k +=1
                 else:
                     new_live_k += 1
                     hyp_samples.append(copy.copy(new_hyp_samples[idx]))

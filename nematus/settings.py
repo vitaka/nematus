@@ -67,6 +67,8 @@ class TranslationSettings(BaseSettings):
 
         self._parser.add_argument('-k', dest='beam_width', type=int, default=5,
                                   help="Beam size (default: %(default)s))")
+        self._parser.add_argument('--max_cands_node', dest='max_cands_node', type=int, default=0,
+                                  help="Maximum new candidates per hypothesis. 0 means unlimited (default: %(default)s))")
         self._parser.add_argument('-n', dest='normalization_alpha', type=float, default=0.0, nargs="?", const=1.0, metavar="ALPHA",
                                   help="Normalize scores by sentence length (with argument, exponentiate lengths by ALPHA)")
         self._parser.add_argument('-c', dest='char_level', action="store_true", help="Character-level")
@@ -97,6 +99,8 @@ class TranslationSettings(BaseSettings):
                                   help="Output file for search graph visualisation. File format is determined by file name, e.g., PDF for `search_graph.pdf`")
         self._parser.add_argument("--max-ratio", "-mr", default=0.0, type=float,
                                   help="If non-zero, target should be no longer than this ratio of source (default: %(default)s).")
+        self._parser.add_argument('--debug', action="store_true",
+                                  help="Prints additional debug information on stderr")
 
     def _set_additional_vars(self):
         self.request_id = uuid.uuid4()

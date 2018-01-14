@@ -125,6 +125,8 @@ class Translator(object):
         self._device_list = settings.device_list
         self._verbose = settings.verbose
         self._retrieved_translations = defaultdict(dict)
+        self._max_cands_node=settings.max_cands_node
+        self._debug=settings.debug
 
         # load model options
         self._load_model_options()
@@ -392,7 +394,7 @@ class Translator(object):
                           stochastic=False, argmax=False,
                           return_alignment=return_alignment,
                           suppress_unk=suppress_unk,
-                          return_hyp_graph=return_hyp_graph, f_next_factors=fs_next_factors, alternate_factors_fs=alternate_factors_fs,forced_y_factors=forced_y_factors)
+                          return_hyp_graph=return_hyp_graph, f_next_factors=fs_next_factors, alternate_factors_fs=alternate_factors_fs,forced_y_factors=forced_y_factors,max_cands_node=self._max_cands_node, debug=self._debug)
 
 
     ### WRITING TO AND READING FROM QUEUES ###
