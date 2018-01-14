@@ -1236,8 +1236,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 print >>sys.stderr,"factors, next_p, model 0 for each hypothesis"
                 for debug_i,row in enumerate(next_p[0]):
                     print >> sys.stderr,"  hyp {} sample (score = {} ): {}, last next_w: {}, last next_w_factors: {} ".format(debug_i,hyp_scores[debug_i],hyp_samples[debug_i],next_w[debug_i], next_w_factors[debug_i])
-                    print >> sys.stderr,"  hyp {}, state factors decoder: {}".format(debug_i,next_state_factors[0][debug_i][:20])
-                    print >> sys.stderr,"  hyp {}, state sf decoder: {}".format(debug_i,next_state[0][debug_i][:20])
+                    print >> sys.stderr,"  hyp {}, state factors decoder: {}".format(debug_i,next_state_factors[0][debug_i][0][:20])
+                    print >> sys.stderr,"  hyp {}, state sf decoder: {}".format(debug_i,next_state[0][debug_i][0][:20])
                     for word_id, value in enumerate(row):
                         if value > 0.1:
                             print >>sys.stderr,"    {}: {} [log: {}]".format(word_id,value, math.log(value))
@@ -1254,8 +1254,6 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             #Positions in cand_flat of the top k scores
             ranks_flat = cand_flat.argpartition(k-dead_k-1)[:(k-dead_k)]
 
-            if debug:
-                print >>sys.stderr,"cand_flat: {}".format(cand_flat)
 
             #averaging the attention weights accross models
             if return_alignment:
@@ -1269,6 +1267,9 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             word_indices = ranks_flat % voc_size
             #scores of the new k_best hypotheses
             costs = cand_flat[ranks_flat]
+            
+            if debug:
+                print >>sys.stderr, "trans_indices: {}".format(trans_indices)
 
             new_hyp_samples = []
             new_hyp_scores = numpy.zeros(k-dead_k).astype(floatX)
@@ -1324,7 +1325,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                     dead_k += 1
                 #maximum candidates per node filtering
                 elif max_cands_node > 0 and previous_hyp_counter[trans_indices[idx]] >= max_cands_node:
-                    dead_k +=1
+                    pass
                 else:
                     new_live_k += 1
                     hyp_samples.append(copy.copy(new_hyp_samples[idx]))
@@ -1378,8 +1379,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             print >>sys.stderr,"surface forms, next_p, model 0 for each hypothesis"
             for debug_i,row in enumerate(next_p[0]):
                 print >> sys.stderr,"  hyp {} sample (score = {} ): {}, last next_w: {}, last next_w_factors: {} ".format(debug_i,hyp_scores[debug_i],hyp_samples[debug_i],next_w[debug_i], next_w_factors[debug_i])
-                print >> sys.stderr,"  hyp {}, state factors decoder: {}".format(debug_i,next_state_factors[0][debug_i][:20])
-                print >> sys.stderr,"  hyp {}, state sf decoder: {}".format(debug_i,next_state[0][debug_i][:20])
+                print >> sys.stderr,"  hyp {}, state factors decoder: {}".format(debug_i,next_state_factors[0][debug_i][0][:20])
+                print >> sys.stderr,"  hyp {}, state sf decoder: {}".format(debug_i,next_state[0][debug_i][0][:20])
                 for word_id, value in enumerate(row):
                     if value > 0.1:
                         print >>sys.stderr,"    {}: {} [log: {} ]".format(word_id,value, math.log(value))
@@ -1441,8 +1442,6 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             probs_flat = probs.flatten()
             ranks_flat = cand_flat.argpartition(k-dead_k-1)[:(k-dead_k)]
 
-            if debug:
-                print >>sys.stderr,"cand_flat: {}".format(cand_flat)
 
             #averaging the attention weights accross models
             if return_alignment:
@@ -1453,6 +1452,9 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             trans_indices = ranks_flat / voc_size
             word_indices = ranks_flat % voc_size
             costs = cand_flat[ranks_flat]
+
+            if debug:
+                print >>sys.stderr, "trans_indices: {}".format(trans_indices)
 
             new_hyp_samples = []
             new_hyp_scores = numpy.zeros(k-dead_k).astype(floatX)
@@ -1505,7 +1507,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                         alignment.append(new_hyp_alignment[idx])
                     dead_k += 1
                 elif max_cands_node > 0 and previous_hyp_counter[trans_indices[idx]] >= max_cands_node:
-                    dead_k +=1
+                    pass
                 else:
                     new_live_k += 1
                     hyp_samples.append(copy.copy(new_hyp_samples[idx]))
