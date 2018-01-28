@@ -395,7 +395,7 @@ class Translator(object):
                           stochastic=False, argmax=False,
                           return_alignment=return_alignment,
                           suppress_unk=suppress_unk,
-                          return_hyp_graph=return_hyp_graph, f_next_factors=fs_next_factors, alternate_factors_fs=alternate_factors_fs,forced_y_factors=forced_y_factors,max_cands_node=self._max_cands_node, weight_probs_factors=self._self._weight_probs_factors, debug=self._debug)
+                          return_hyp_graph=return_hyp_graph, f_next_factors=fs_next_factors, alternate_factors_fs=alternate_factors_fs,forced_y_factors=forced_y_factors,max_cands_node=self._max_cands_node, weight_probs_factors=self._weight_probs_factors, debug=self._debug)
 
 
     ### WRITING TO AND READING FROM QUEUES ###

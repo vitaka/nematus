@@ -1254,7 +1254,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             #probablity of next word for each element of vocabulary and hypothesis, flattened
             probs_flat = probs.flatten()
             #Positions in cand_flat of the top k scores
-            ranks_flat = cand_flat.argpartition(k-dead_k-1)[:(k-dead_k)]
+            partIndex=min(k-dead_k,len(cand_flat))
+            ranks_flat = cand_flat.argpartition(partIndex-1)[:(partIndex)]
 
 
             #averaging the attention weights accross models
@@ -1444,7 +1445,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             probs = sum(next_p)/num_models
             cand_flat = cand_scores.flatten()
             probs_flat = probs.flatten()
-            ranks_flat = cand_flat.argpartition(k-dead_k-1)[:(k-dead_k)]
+            partIndex=min(k-dead_k,len(cand_flat))
+            ranks_flat = cand_flat.argpartition(partIndex-1)[:(partIndex)]
 
 
             #averaging the attention weights accross models
