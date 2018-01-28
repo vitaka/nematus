@@ -1904,7 +1904,7 @@ def train(dim_word=512,  # word vector dimensionality
                          shuffle_each_epoch=shuffle_each_epoch,
                          sort_by_length=sort_by_length,
                          use_factor=(factors > 1),
-                         maxibatch_size=maxibatch_size,interleave_tl=interleave_tl,use_factor_tl=model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state'])
+                         maxibatch_size=maxibatch_size,interleave_tl=interleave_tl,use_factor_tl=model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state'],n_words_target_factor1= model_options['n_words_target_factor1'] if 'n_words_target_factor1' in model_options else -1 )
 
     if valid_datasets and validFreq:
         valid = TextIterator(valid_datasets[0], valid_datasets[1],
@@ -1912,7 +1912,7 @@ def train(dim_word=512,  # word vector dimensionality
                             n_words_source=n_words_src, n_words_target=n_words,
                             batch_size=valid_batch_size,
                             use_factor=(factors>1),
-                            maxlen=maxlen,interleave_tl=interleave_tl,use_factor_tl=model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state'])
+                            maxlen=maxlen,interleave_tl=interleave_tl,use_factor_tl=model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state'],n_words_target_factor1= model_options['n_words_target_factor1'] if 'n_words_target_factor1' in model_options else -1 )
     else:
         valid = None
 

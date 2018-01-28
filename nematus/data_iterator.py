@@ -24,7 +24,8 @@ class TextIterator:
                  use_factor=False,
                  maxibatch_size=20,
                  interleave_tl=False,
-                 use_factor_tl=False):
+                 use_factor_tl=False,
+                 n_words_target_factor1=-1):
         if shuffle_each_epoch:
             self.source_orig = source
             self.target_orig = target
@@ -50,6 +51,7 @@ class TextIterator:
 
         self.n_words_source = n_words_source
         self.n_words_target = n_words_target
+        self.n_words_target_factor1=n_words_target_factor1
 
         if self.n_words_source > 0:
             for d in self.source_dicts:
@@ -59,9 +61,13 @@ class TextIterator:
 
         if self.n_words_target > 0:
             if use_factor_tl:
-                for d in self.target_dict:
+                for dictindex,d in enumerate(self.target_dict):
                     for key, idx in d.items():
-                        if idx >= self.n_words_target:
+                        if dictindex != 1:
+                            compareWith=self.n_words_target
+                        else:
+                            compareWith=self.n_words_target_factor1
+                        if compareWith >= 0 and idx >= compareWith :
                             del d[key]
             else:
                 for key, idx in self.target_dict.items():
