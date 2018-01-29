@@ -132,7 +132,7 @@ class Translator(object):
         # load model options
         self._load_model_options()
         self.tl_factors=False
-        if self._options[0]['multiple_decoders_connection_feedback']:
+        if self._options[0]['multiple_decoders_connection_feedback'] or self._options[0]['multiple_decoders_connection_state']:
             self.tl_factors=True
         for option in self._options:
             if 'combination_sf_factors_concat' not in option:
