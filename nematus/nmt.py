@@ -1141,7 +1141,7 @@ def build_full_sampler(tparams, options, use_noise, trng, greedy=False):
 # this function iteratively calls f_init and f_next functions.
 def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                stochastic=True, argmax=False, return_alignment=False, suppress_unk=False,
-               return_hyp_graph=False, f_next_factors=None, alternate_factors_fs=False, forced_y_factors=None, max_cands_node=0, weight_probs_factors=None,debug=False):
+               return_hyp_graph=False, f_next_factors=None, alternate_factors_fs=False, forced_y_factors=None, max_cands_node=0, weight_probs_factors=None,factors_fs_at_once=False,debug=False):
 
     # k is the beam size we have
     if k > 1 and argmax:
@@ -1353,32 +1353,188 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             next_state_factors = [numpy.array(state) for state in zip(*hyp_states_factors)]
             next_state = [numpy.array(state) for state in zip(*hyp_states)]
         ## END OPERATIONS WITH FACTORS
+        elif factors_fs_at_once:
+            #We run one step for both decoders
+            for i in xrange(num_models):
 
-        #Here starts original code, that operates on surface forms
-        for i in xrange(num_models):
-            ctx = numpy.tile(ctx0[i], [live_k, 1])
+                ctx = numpy.tile(ctx0[i], [live_k, 1])
 
-            # for theano function, go from (batch_size, layers, dim) to (layers, batch_size, dim)
-            next_state[i] = numpy.transpose(next_state[i], (1,0,2))
+                # for theano function, go from (batch_size, layers, dim) to (layers, batch_size, dim)
+                next_state[i] = numpy.transpose(next_state[i], (1,0,2))
+                next_state_factors[i] = numpy.transpose(next_state_factors[i], (1,0,2))
 
-            if alternate_factors_fs:
-                inps = [next_w, next_w_factors, ctx, next_state[i]]
-            else:
-                inps = [next_w, ctx, next_state[i]]
-            ret = f_next[i](*inps)
+                inps = [next_w,next_w_factors, ctx, next_state[i] ,next_state_factors[i]]
+                ret = f_next[i](*inps)
 
-            # dimension of dec_alpha (k-beam-size, number-of-input-hidden-units)
-            next_p[i], next_w_tmp, next_state[i] = ret[0], ret[1], ret[2]
+                # dimension of dec_alpha (k-beam-size, number-of-input-hidden-units)
+                next_p[i], next_w_tmp, next_state[i], next_p_factors[i], next_w_tmp_factors, next_state_factors[i] = ret[0], ret[1], ret[2], ret[3], ret[4], ret[5]
+                if return_alignment:
+                    #TODO: think about this
+                    dec_alphas[i] = ret[6]
+
+                # to more easily manipulate batch size, go from (layers, batch_size, dim) to (batch_size, layers, dim)
+                next_state[i] = numpy.transpose(next_state[i], (1,0,2))
+                next_state_factors[i] = numpy.transpose(next_state_factors[i], (1,0,2))
+
+                if suppress_unk:
+                    next_p[i][:,1] = -numpy.inf
+                if forced_y_factors:
+                    for w in xrange(next_p_factors[i][0].shape[-1]):
+                        if  ii < len(forced_y_factors):
+                            if w != forced_y_factors[ii]:
+                                next_p_factors[i][:,w] = -numpy.inf
+                        else:
+                            if w > 0:
+                                next_p_factors[i][:,w] = -numpy.inf
+                if weight_probs_factors != None:
+                    next_p_factors[i]=next_p_factors[i]*weight_probs_factors
+
+            if debug:
+                print >>sys.stderr,"factors, next_p, model 0 for each hypothesis"
+                for debug_i,row in enumerate(next_p_factors[0]):
+                    print >> sys.stderr,"  hyp {} sample (score = {} ): {}, last next_w: {}, last next_w_factors: {} ".format(debug_i,hyp_scores[debug_i],hyp_samples[debug_i],next_w[debug_i], next_w_factors[debug_i])
+                    print >> sys.stderr,"  hyp {}, state factors decoder: {}".format(debug_i,next_state_factors[0][debug_i][0][:20])
+                    print >> sys.stderr,"  hyp {}, state sf decoder: {}".format(debug_i,next_state[0][debug_i][0][:20])
+                    for word_id, value in enumerate(row):
+                        if value > 0.1:
+                            print >>sys.stderr,"    {}: {} [log: {}]".format(word_id,value, math.log(value))
+
+            #one step in beam search for factors
+            #next_p_factors : model x hypotheses x voc_size
+            #hyp_scores: hypotheses
+            #cand_scores: hypotheses x voc_size = score of the hypothesis after choosing the corresponding word in next_p
+            cand_scores = hyp_scores[:, None] - sum(numpy.log(next_p_factors))
+            #probs: hypotheses x voc_size : probability of next word for each element of vocbaulary and hypothesis
+            probs = sum(next_p_factors)/num_models
+            #scores of the hypotheses flattened (1 dimension)
+            cand_flat = cand_scores.flatten()
+            #probablity of next word for each element of vocabulary and hypothesis, flattened
+            probs_flat = probs.flatten()
+            #Positions in cand_flat of the top k scores
+            partIndex=min(k-dead_k,len(cand_flat))
+            ranks_flat = cand_flat.argpartition(partIndex-1)[:(partIndex)]
+
+
+            #averaging the attention weights accross models
             if return_alignment:
-                dec_alphas[i] = ret[3]
+                mean_alignment = sum(dec_alphas)/num_models
 
-            # to more easily manipulate batch size, go from (layers, batch_size, dim) to (batch_size, layers, dim)
-            next_state[i] = numpy.transpose(next_state[i], (1,0,2))
+            voc_size = next_p_factors[0].shape[1]
+            # index of each k-best hypothesis
+            #index, in the previous list of k best hypotheses, of the each of new k best hypotheses
+            trans_indices = ranks_flat / voc_size
+            #index, in the vocabulary, of the last word of each of the new k best hypotheses
+            word_indices = ranks_flat % voc_size
+            #scores of the new k_best hypotheses
+            costs = cand_flat[ranks_flat]
 
-            if suppress_unk:
-                next_p[i][:,1] = -numpy.inf
-            if alternate_factors_fs and weight_probs_factors != None:
-                next_p[i]=next_p[i]*(1-weight_probs_factors)
+            if debug:
+                print >>sys.stderr, "trans_indices: {}".format(trans_indices)
+
+            new_hyp_samples = []
+            new_hyp_scores = numpy.zeros(k-dead_k).astype(floatX)
+            new_word_probs = []
+            new_hyp_states = []
+            new_hyp_states_factors = []
+            if return_alignment:
+                # holds the history of attention weights for each time step for each of the surviving hypothesis
+                # dimensions (live_k * target_words * source_hidden_units]
+                # at each time step we append the attention weights corresponding to the current target word
+                new_hyp_alignment = [[] for _ in xrange(k-dead_k)]
+
+            #idx: index of new k_best hypothesis
+            # ti -> index of previous k-best hypothesis
+            for idx, [ti, wi] in enumerate(zip(trans_indices, word_indices)):
+                new_hyp_samples.append(hyp_samples[ti]+[wi])
+                new_word_probs.append(word_probs[ti] + [probs_flat[ranks_flat[idx]].tolist()])
+                new_hyp_scores[idx] = copy.copy(costs[idx])
+                new_hyp_states.append([copy.copy(next_state[i][ti]) for i in xrange(num_models)])
+                new_hyp_states_factors.append([copy.copy(next_state_factors[i][ti]) for i in xrange(num_models)])
+                if return_alignment:
+                    # get history of attention weights for the current hypothesis
+                    new_hyp_alignment[idx] = copy.copy(hyp_alignment[ti])
+                    # extend the history with current attention weights
+                    new_hyp_alignment[idx].append(mean_alignment[ti])
+
+
+            # check the finished samples
+            new_live_k = 0
+            hyp_samples = []
+            hyp_scores = []
+            hyp_states = []
+            hyp_states_factors = []
+            word_probs = []
+            if return_alignment:
+                hyp_alignment = []
+
+            # sample and sample_score hold the k-best translations and their scores
+            #dictionary for implementing "Maximum Candidates per Node" filtering
+            previous_hyp_counter=defaultdict(int)
+            for idx in xrange(len(new_hyp_samples)):
+                if return_hyp_graph:
+                    word, history = new_hyp_samples[idx][-1], new_hyp_samples[idx][:-1]
+                    score = new_hyp_scores[idx]
+                    word_prob = new_word_probs[idx][-1]
+                    hyp_graph.add(word, history, word_prob=word_prob, cost=score)
+                if new_hyp_samples[idx][-1] == 0:
+                    sample.append(copy.copy(new_hyp_samples[idx]))
+                    sample_score.append(new_hyp_scores[idx])
+                    sample_word_probs.append(new_word_probs[idx])
+                    if return_alignment:
+                        alignment.append(new_hyp_alignment[idx])
+                    dead_k += 1
+                #maximum candidates per node filtering
+                elif max_cands_node > 0 and previous_hyp_counter[trans_indices[idx]] >= max_cands_node:
+                    pass
+                else:
+                    new_live_k += 1
+                    hyp_samples.append(copy.copy(new_hyp_samples[idx]))
+                    hyp_scores.append(new_hyp_scores[idx])
+                    hyp_states.append(copy.copy(new_hyp_states[idx]))
+                    hyp_states_factors.append(copy.copy(new_hyp_states_factors[idx]))
+                    word_probs.append(new_word_probs[idx])
+                    if return_alignment:
+                        hyp_alignment.append(new_hyp_alignment[idx])
+                previous_hyp_counter[trans_indices[idx]]+=1
+            hyp_scores = numpy.array(hyp_scores)
+
+            live_k = new_live_k
+
+            if new_live_k < 1:
+                break
+            if dead_k >= k:
+                break
+
+            next_state_factors = [numpy.array(state) for state in zip(*hyp_states_factors)]
+            next_state = [numpy.array(state) for state in zip(*hyp_states)]
+
+
+        #HERE STARTS ORIGINAL CODE; THAT OPERATES ON SURFACE FORMS
+        if not factors_fs_at_once:
+            for i in xrange(num_models):
+                ctx = numpy.tile(ctx0[i], [live_k, 1])
+
+                # for theano function, go from (batch_size, layers, dim) to (layers, batch_size, dim)
+                next_state[i] = numpy.transpose(next_state[i], (1,0,2))
+
+                if alternate_factors_fs:
+                    inps = [next_w, next_w_factors, ctx, next_state[i]]
+                else:
+                    inps = [next_w, ctx, next_state[i]]
+                ret = f_next[i](*inps)
+
+                # dimension of dec_alpha (k-beam-size, number-of-input-hidden-units)
+                next_p[i], next_w_tmp, next_state[i] = ret[0], ret[1], ret[2]
+                if return_alignment:
+                    dec_alphas[i] = ret[3]
+
+                # to more easily manipulate batch size, go from (layers, batch_size, dim) to (batch_size, layers, dim)
+                next_state[i] = numpy.transpose(next_state[i], (1,0,2))
+
+                if suppress_unk:
+                    next_p[i][:,1] = -numpy.inf
+                if alternate_factors_fs and weight_probs_factors != None:
+                    next_p[i]=next_p[i]*(1-weight_probs_factors)
 
         if debug:
             print >>sys.stderr,"surface forms, next_p, model 0 for each hypothesis"
