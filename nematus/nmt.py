@@ -1436,6 +1436,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             new_word_probs = []
             new_hyp_states = []
             new_hyp_states_factors = []
+            new_next_p = []
             if return_alignment:
                 # holds the history of attention weights for each time step for each of the surviving hypothesis
                 # dimensions (live_k * target_words * source_hidden_units]
@@ -1450,6 +1451,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 new_hyp_scores[idx] = copy.copy(costs[idx])
                 new_hyp_states.append([copy.copy(next_state[i][ti]) for i in xrange(num_models)])
                 new_hyp_states_factors.append([copy.copy(next_state_factors[i][ti]) for i in xrange(num_models)])
+                new_next_p.append([copy.copy(next_p[i][ti]) for i in xrange(num_models)])
                 if return_alignment:
                     # get history of attention weights for the current hypothesis
                     new_hyp_alignment[idx] = copy.copy(hyp_alignment[ti])
@@ -1464,6 +1466,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             hyp_states = []
             hyp_states_factors = []
             word_probs = []
+            next_p_l = []
             if return_alignment:
                 hyp_alignment = []
 
@@ -1492,6 +1495,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                     hyp_scores.append(new_hyp_scores[idx])
                     hyp_states.append(copy.copy(new_hyp_states[idx]))
                     hyp_states_factors.append(copy.copy(new_hyp_states_factors[idx]))
+                    next_p_l.append(copy.copy(new_next_p[idx]))
                     word_probs.append(new_word_probs[idx])
                     if return_alignment:
                         hyp_alignment.append(new_hyp_alignment[idx])
@@ -1507,6 +1511,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
 
             next_state_factors = [numpy.array(state) for state in zip(*hyp_states_factors)]
             next_state = [numpy.array(state) for state in zip(*hyp_states)]
+            next_p = [numpy.array(p) for p in zip(*next_p_l)]
 
 
         #HERE STARTS ORIGINAL CODE; THAT OPERATES ON SURFACE FORMS
