@@ -137,6 +137,10 @@ class Translator(object):
         self._factors_fs_at_once=False
         if  self._options[0]['multiple_decoders_connection_state']:
             self._factors_fs_at_once=True
+        self._alternate_factors_fs=False
+        if  self._options[0]['multiple_decoders_connection_feedback']:
+            self._alternate_factors_fs=True
+
         for option in self._options:
             if 'combination_sf_factors_concat' not in option:
                 option['combination_sf_factors_concat']=False
@@ -339,12 +343,12 @@ class Translator(object):
             idx = input_item.idx
             request_id = input_item.request_id
 
-            output_item = self._translate(process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, self.tl_factors,input_item.forced_y_factors)
+            output_item = self._translate(process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, input_item.forced_y_factors)
             self._output_queue.put((request_id, idx, output_item))
 
         return
 
-    def _translate(self, process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, alternate_factors_fs, forced_y_factors):
+    def _translate(self, process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, forced_y_factors):
         """
         Actual translation (model sampling).
         """
@@ -358,7 +362,7 @@ class Translator(object):
         logging.debug('{0} - {1}\n'.format(process_id, idx))
 
         # sample given an input sequence and obtain scores
-        sample, score, word_probs, alignment, hyp_graph = self._sample(input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, alternate_factors_fs,forced_y_factors)
+        sample, score, word_probs, alignment, hyp_graph = self._sample(input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample,forced_y_factors)
 
         # normalize scores according to sequence lengths
         if normalization_alpha:
@@ -374,7 +378,7 @@ class Translator(object):
 
         return output_item
 
-    def _sample(self, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, alternate_factors_fs,forced_y_factors):
+    def _sample(self, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample,forced_y_factors):
         """
         Sample from model.
         """
@@ -398,7 +402,7 @@ class Translator(object):
                           stochastic=False, argmax=False,
                           return_alignment=return_alignment,
                           suppress_unk=suppress_unk,
-                          return_hyp_graph=return_hyp_graph, f_next_factors=fs_next_factors, alternate_factors_fs=alternate_factors_fs,forced_y_factors=forced_y_factors,max_cands_node=self._max_cands_node, weight_probs_factors=self._weight_probs_factors, factors_fs_at_once=self._factors_fs_at_once debug=self._debug)
+                          return_hyp_graph=return_hyp_graph, f_next_factors=fs_next_factors, alternate_factors_fs=self._alternate_factors_fs,forced_y_factors=forced_y_factors,max_cands_node=self._max_cands_node, weight_probs_factors=self._weight_probs_factors, factors_fs_at_once=self._factors_fs_at_once,debug=self._debug)
 
 
     ### WRITING TO AND READING FROM QUEUES ###
