@@ -1181,6 +1181,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
     next_state_factors = [None]*num_models
     ctx0 = [None]*num_models
     next_p = [None]*num_models
+    next_p_factors=[None]*num_models
     dec_alphas = [None]*num_models
     # get initial state of decoder rnn and encoder context
     for i in xrange(num_models):
