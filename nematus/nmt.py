@@ -1694,10 +1694,10 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             if dead_k >= k:
                 break
             next_w = numpy.array([w[-1] for w in hyp_samples])
-            if alternate_factors_fs:
+            if alternate_factors_fs or factors_fs_at_once:
                 next_w_factors = numpy.array([w[-2] for w in hyp_samples])
             next_state = [numpy.array(state) for state in zip(*hyp_states)]
-            if alternate_factors_fs:
+            if alternate_factors_fs or factors_fs_at_once:
                 next_state_factors = [numpy.array(state) for state in zip(*hyp_states_factors)]
 
     # dump every remaining one
