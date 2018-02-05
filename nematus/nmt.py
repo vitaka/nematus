@@ -1693,11 +1693,12 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 break
             if dead_k >= k:
                 break
-
             next_w = numpy.array([w[-1] for w in hyp_samples])
-            next_w_factors = numpy.array([w[-2] for w in hyp_samples])
+            if alternate_factors_fs:
+                next_w_factors = numpy.array([w[-2] for w in hyp_samples])
             next_state = [numpy.array(state) for state in zip(*hyp_states)]
-            next_state_factors = [numpy.array(state) for state in zip(*hyp_states_factors)]
+            if alternate_factors_fs:
+                next_state_factors = [numpy.array(state) for state in zip(*hyp_states_factors)]
 
     # dump every remaining one
     if not argmax and live_k > 0:
@@ -1728,7 +1729,7 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
         if len(x[0][0]) != options['factors']:
             logging.error('Mismatch between number of factors in settings ({0}), and number in validation corpus ({1})\n'.format(options['factors'], len(x[0][0])))
             sys.exit(1)
-        if len(y) and len(y[0]) and len(y[0][0]) > 1:
+        if len(y) and len(y[0]) and not isinstance(y[0][0], (int, long))  and  len(y[0][0]) > 1:
             if not options['multiple_decoders_connection_feedback'] and not options['multiple_decoders_connection_state']:
                 logging.error('Mismatch between number of TL factors in settings, and number in training corpus ({0})\n'.format(len(y[0][0])))
                 sys.exit(1)
@@ -1761,17 +1762,19 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True, norma
         if normalization_alpha:
             adjusted_lengths = numpy.array([numpy.count_nonzero(s) ** normalization_alpha for s in y_mask.T])
             pprobs /= adjusted_lengths
-            pprobs_sf /= adjusted_lengths
-            pprobs_factors /= adjusted_lengths
+            if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
+                pprobs_sf /= adjusted_lengths
+                pprobs_factors /= adjusted_lengths
 
         for pp in pprobs:
             probs.append(pp)
 
-        for pp in pprobs_sf:
-            probs_sf.append(pp)
+        if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
+            for pp in pprobs_sf:
+                probs_sf.append(pp)
 
-        for pp in pprobs_factors:
-            probs_factors.append(pp)
+            for pp in pprobs_factors:
+                probs_factors.append(pp)
 
         logging.debug('%d samples computed' % (n_done))
 
