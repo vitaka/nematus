@@ -56,7 +56,13 @@ class Translation(object):
         header = "{0} ||| {1} ||| {2} ||| {3} ||| {4} {5}\n".format(*columns)
 
         matrix = []
-        for target_word_alignment in self.alignment:
+        if self.target_factors:
+            start=1
+            step=2
+        else:
+            start=0
+            step=1
+        for target_word_alignment in self.alignment[start::step]:
             current_weights = []
             for weight in target_word_alignment:
                 current_weights.append(str(weight))
