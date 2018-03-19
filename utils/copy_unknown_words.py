@@ -26,22 +26,29 @@ Example input file:
 '''
 
 def copy_unknown_words(filename, out_filename, unk_token):
+    numSent=0
     for line in filename:
         items = line.split(' ||| ')
         if len(items) > 1:
-            src = items[1].split()
-            target = items[3].split()
+            src = items[3].split()
+            target = items[1].split()
             alignments = []
         elif line.strip():
             alignment = map(float,line.split())
+            if len(alignment) > len(target):
+                alignment=alignment[:-1]
             hard_alignment = numpy.argmax(alignment, axis=0)
             alignments.append(hard_alignment)
         elif line == '\n':
             print alignments
             for i, word in enumerate(target):
                 if word == unk_token:
-                    target[i] = src[alignments[i]]
+                    try:
+                        target[i] = src[alignments[i]]
+                    except IndexError:
+                        print>>sys.stderr, "Index error: sentence={} i={}, alignments[i]={}, len(src)={}, src={} ".format(numSent,i,alignments[i],len(src),src)
             out_filename.write(' '.join(target) + '\n')
+            numSent+=1
 
 
 if __name__ == "__main__":
