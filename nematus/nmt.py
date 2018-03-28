@@ -1371,7 +1371,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 next_p[i], next_w_tmp, next_state[i], next_p_factors[i], next_w_tmp_factors, next_state_factors[i] = ret[0], ret[1], ret[2], ret[3], ret[4], ret[5]
                 if return_alignment:
                     #TODO: think about this
-                    dec_alphas[i] = ret[6]
+                    dec_alphas[i] = ret[6] #This is attention according to the surface form decoder
 
                 # to more easily manipulate batch size, go from (layers, batch_size, dim) to (batch_size, layers, dim)
                 next_state[i] = numpy.transpose(next_state[i], (1,0,2))
@@ -1438,6 +1438,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             new_hyp_states = []
             new_hyp_states_factors = []
             new_next_p = []
+            new_dec_alphas = []
             if return_alignment:
                 # holds the history of attention weights for each time step for each of the surviving hypothesis
                 # dimensions (live_k * target_words * source_hidden_units]
@@ -1453,11 +1454,13 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 new_hyp_states.append([copy.copy(next_state[i][ti]) for i in xrange(num_models)])
                 new_hyp_states_factors.append([copy.copy(next_state_factors[i][ti]) for i in xrange(num_models)])
                 new_next_p.append([copy.copy(next_p[i][ti]) for i in xrange(num_models)])
+                new_dec_alphas.append([copy.copy(dec_alphas[i][ti]) for i in xrange(num_models)])
                 if return_alignment:
                     # get history of attention weights for the current hypothesis
                     new_hyp_alignment[idx] = copy.copy(hyp_alignment[ti])
                     # extend the history with current attention weights
-                    new_hyp_alignment[idx].append(mean_alignment[ti])
+                    #new_hyp_alignment[idx].append(mean_alignment[ti])
+                    new_hyp_alignment[idx].append(None) #We do not compute alignment for factors
 
 
             # check the finished samples
@@ -1468,6 +1471,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             hyp_states_factors = []
             word_probs = []
             next_p_l = []
+            dec_alphas_l = []
             if return_alignment:
                 hyp_alignment = []
 
@@ -1497,9 +1501,12 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                     hyp_states.append(copy.copy(new_hyp_states[idx]))
                     hyp_states_factors.append(copy.copy(new_hyp_states_factors[idx]))
                     next_p_l.append(copy.copy(new_next_p[idx]))
+                    dec_alphas_l.append(copy.copy(new_dec_alphas[idx]))
                     word_probs.append(new_word_probs[idx])
                     if return_alignment:
-                        hyp_alignment.append(new_hyp_alignment[idx])
+                        #hyp_alignment.append(new_hyp_alignment[idx])
+                        hyp_alignment.append(None)
+
                 previous_hyp_counter[trans_indices[idx]]+=1
             hyp_scores = numpy.array(hyp_scores)
 
@@ -1513,6 +1520,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             next_state_factors = [numpy.array(state) for state in zip(*hyp_states_factors)]
             next_state = [numpy.array(state) for state in zip(*hyp_states)]
             next_p = [numpy.array(p) for p in zip(*next_p_l)]
+            dec_alphas=[numpy.array(p) for p in zip(*dec_alphas_l)]
 
 
         #HERE STARTS ORIGINAL CODE; THAT OPERATES ON SURFACE FORMS
