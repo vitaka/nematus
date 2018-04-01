@@ -1504,8 +1504,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                     dec_alphas_l.append(copy.copy(new_dec_alphas[idx]))
                     word_probs.append(new_word_probs[idx])
                     if return_alignment:
-                        #hyp_alignment.append(new_hyp_alignment[idx])
-                        hyp_alignment.append(None)
+                        hyp_alignment.append(new_hyp_alignment[idx])
+                        #hyp_alignment.append(None)
 
                 previous_hyp_counter[trans_indices[idx]]+=1
             hyp_scores = numpy.array(hyp_scores)
