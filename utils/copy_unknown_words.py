@@ -35,7 +35,7 @@ def copy_unknown_words(filename, out_filename, unk_token):
             alignments = []
         elif line.strip():
             alignment = map(float,line.split())
-            if len(alignment) > len(target):
+            if len(alignment) > len(src):
                 alignment=alignment[:-1]
             hard_alignment = numpy.argmax(alignment, axis=0)
             alignments.append(hard_alignment)

@@ -1191,7 +1191,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
         ret[0] = numpy.transpose(ret[0], (1,0,2))
 
         next_state[i] = numpy.tile( ret[0] , (live_k, 1, 1))
-        next_state_factors[i] = numpy.tile( ret[0] , (live_k, 1, 1))
+        next_state_factors[i] = numpy.tile( ret[2] , (live_k, 1, 1))
         ctx0[i] = ret[1]
 
     next_w = -1 * numpy.ones((live_k,)).astype('int64')
@@ -1454,8 +1454,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                 new_hyp_states.append([copy.copy(next_state[i][ti]) for i in xrange(num_models)])
                 new_hyp_states_factors.append([copy.copy(next_state_factors[i][ti]) for i in xrange(num_models)])
                 new_next_p.append([copy.copy(next_p[i][ti]) for i in xrange(num_models)])
-                new_dec_alphas.append([copy.copy(dec_alphas[i][ti]) for i in xrange(num_models)])
                 if return_alignment:
+                    new_dec_alphas.append([copy.copy(dec_alphas[i][ti]) for i in xrange(num_models)])
                     # get history of attention weights for the current hypothesis
                     new_hyp_alignment[idx] = copy.copy(hyp_alignment[ti])
                     # extend the history with current attention weights
@@ -1501,9 +1501,9 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                     hyp_states.append(copy.copy(new_hyp_states[idx]))
                     hyp_states_factors.append(copy.copy(new_hyp_states_factors[idx]))
                     next_p_l.append(copy.copy(new_next_p[idx]))
-                    dec_alphas_l.append(copy.copy(new_dec_alphas[idx]))
                     word_probs.append(new_word_probs[idx])
                     if return_alignment:
+                        dec_alphas_l.append(copy.copy(new_dec_alphas[idx]))
                         hyp_alignment.append(new_hyp_alignment[idx])
                         #hyp_alignment.append(None)
 
@@ -1520,7 +1520,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             next_state_factors = [numpy.array(state) for state in zip(*hyp_states_factors)]
             next_state = [numpy.array(state) for state in zip(*hyp_states)]
             next_p = [numpy.array(p) for p in zip(*next_p_l)]
-            dec_alphas=[numpy.array(p) for p in zip(*dec_alphas_l)]
+            if return_alignment:
+                dec_alphas=[numpy.array(p) for p in zip(*dec_alphas_l)]
 
 
         #HERE STARTS ORIGINAL CODE; THAT OPERATES ON SURFACE FORMS
