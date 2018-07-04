@@ -2000,6 +2000,7 @@ def train(dim_word=512,  # word vector dimensionality
         n_words_src = max(worddicts[0].values()) + 1
         model_options['n_words_src'] = n_words_src
     if n_words is None:
+        #TODO: take into account factors
         n_words = max(worddicts[-1].values()) + 1
         model_options['n_words'] = n_words
 
