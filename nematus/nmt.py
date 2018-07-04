@@ -1191,7 +1191,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
         ret[0] = numpy.transpose(ret[0], (1,0,2))
 
         next_state[i] = numpy.tile( ret[0] , (live_k, 1, 1))
-        next_state_factors[i] = numpy.tile( ret[0] , (live_k, 1, 1))
+        next_state_factors[i] = numpy.tile( ret[2] , (live_k, 1, 1))
         ctx0[i] = ret[1]
 
     next_w = -1 * numpy.ones((live_k,)).astype('int64')
