@@ -1954,6 +1954,8 @@ def train(dim_word=512,  # word vector dimensionality
           multiple_decoders_connection_state=False,
           combination_sf_factors_concat=False,
           independent_ling_decoders=False,
+          early_stop_on_factors=False
+          freeze_ling_decoders=False,
           debug=False
     ):
 
@@ -2195,6 +2197,8 @@ def train(dim_word=512,  # word vector dimensionality
     # don't update prior model parameters
     if prior_model:
         updated_params = OrderedDict([(key,value) for (key,value) in updated_params.iteritems() if not key.startswith('prior_')])
+    elif freeze_ling_decoders:
+        updated_params = OrderedDict([(key,value) for (key,value) in updated_params.iteritems() if not key.endswith('_factor1') and not key.startswith('decoder_factor1')  ])
 
     logging.info('Computing gradient...')
     grads = tensor.grad(cost, wrt=itemlist(updated_params))
@@ -2512,7 +2516,10 @@ def train(dim_word=512,  # word vector dimensionality
                 if model_options['multiple_decoders_connection_feedback'] or model_options['multiple_decoders_connection_state']:
                     valid_err_sf = valid_errs_sf.mean()
                     valid_err_factors = valid_errs_factors.mean()
-                    valid_err_for_comparison=valid_err
+                    if model_options['early_stop_on_factors']:
+                        valid_err_for_comparison=valid_err_factors
+                    else:
+                        valid_err_for_comparison=valid_err
                 else:
                     valid_err_for_comparison=valid_err
                 training_progress.history_errs.append(float(valid_err_for_comparison))
@@ -2745,6 +2752,7 @@ if __name__ == '__main__':
                          help="truncate BPTT gradients in the encoder to this value. Use -1 for no truncation (default: %(default)s)")
     training.add_argument('--decoder_truncate_gradient', type=int, default=-1, metavar='INT',
                          help="truncate BPTT gradients in the encoder to this value. Use -1 for no truncation (default: %(default)s)")
+    training.add_argument('--freeze_ling_decoders', action="store_true")
 
     validation = parser.add_argument_group('validation parameters')
     validation.add_argument('--valid_datasets', type=str, default=None, metavar='PATH', nargs=2,
@@ -2761,6 +2769,7 @@ if __name__ == '__main__':
                          help="learning rate decay on each restart (default: %(default)s)")
     validation.add_argument('--external_validation_script', type=str, default=None, metavar='PATH',
                          help="location of validation script (to run your favorite metric for validation) (default: %(default)s)")
+    validation.add_argument('--early_stop_on_factors', action="store_true")
 
     display = parser.add_argument_group('display parameters')
     display.add_argument('--dispFreq', type=int, default=1000, metavar='INT',
