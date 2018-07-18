@@ -1954,7 +1954,7 @@ def train(dim_word=512,  # word vector dimensionality
           multiple_decoders_connection_state=False,
           combination_sf_factors_concat=False,
           independent_ling_decoders=False,
-          early_stop_on_factors=False
+          early_stop_on_factors=False,
           freeze_ling_decoders=False,
           debug=False
     ):
