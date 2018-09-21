@@ -261,7 +261,7 @@ def init_params(options):
 
 
 # bidirectional RNN encoder: take input x (optionally with mask), and produce sequence of context vectors (ctx)
-def build_encoder(x,tparams, options, dropout, suffix='' x_mask=None, sampling=False):
+def build_encoder(x,tparams, options, dropout, suffix='', x_mask=None, sampling=False):
 
 
     # for the backward rnn, we just need to invert x
@@ -844,13 +844,13 @@ def build_model(tparams, options):
 
     if options['two_encoders']:
         if options['two_encoders_optimize_sf']:
-            ctx = build_encoder(x,tparams, options, dropout,suffix='encsf', x_mask, sampling=False)
+            ctx = build_encoder(x,tparams, options, dropout,'encsf', x_mask, sampling=False)
         elif options['two_encoders_optimize_factors']:
-            ctx = build_encoder(x,tparams, options, dropout,suffix='encfactors', x_mask, sampling=False)
+            ctx = build_encoder(x,tparams, options, dropout,'encfactors', x_mask, sampling=False)
         else:
             assert False, "encoder not specified"
     else:
-        ctx = build_encoder(x,tparams, options, dropout,suffix='', x_mask, sampling=False)
+        ctx = build_encoder(x,tparams, options, dropout,'', x_mask, sampling=False)
 
     n_samples = x.shape[2]
 
@@ -941,9 +941,9 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     x.tag.test_value = (numpy.random.rand(1, 5, 10)*100).astype('int64')
 
     if options['two_encoders']:
-        ctx_sf = build_encoder(x,tparams, options, dropout,suffix='encsf', x_mask, sampling=True)
+        ctx_sf = build_encoder(x,tparams, options, dropout,'encsf', x_mask, sampling=True)
         ctx_sf_mean=ctx_sf.mean(0)
-        ctx_factors = build_encoder(x,tparams, options, dropout,suffix='encfactors', x_mask, sampling=True)
+        ctx_factors = build_encoder(x,tparams, options, dropout,'encfactors', x_mask, sampling=True)
         ctx_factors_mean=ctx_factors.mean(0)
     else:
         ctx = build_encoder(x,tparams, options, dropout, suffix='', x_mask=None, sampling=True)
@@ -2003,6 +2003,9 @@ def train(dim_word=512,  # word vector dimensionality
           independent_ling_decoders=False,
           early_stop_on_factors=False,
           freeze_ling_decoders=False,
+          two_encoders=False,
+          two_encoders_optimize_sf=False,
+          two_encoders_optimize_factors=False,
           debug=False
     ):
 
