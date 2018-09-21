@@ -114,39 +114,44 @@ def init_params(options):
             params = get_layer_param('embedding')(options, params, options['n_words_factor1'], options['dim_word'], suffix='_dec_factor1')
 
 
-    # encoder: bidirectional RNN
-    params = get_layer_param(options['encoder'])(options, params,
-                                              prefix='encoder',
-                                              nin=options['dim_word'],
-                                              dim=options['dim'],
-                                              recurrence_transition_depth=options['enc_recurrence_transition_depth'])
-    params = get_layer_param(options['encoder'])(options, params,
-                                              prefix='encoder_r',
-                                              nin=options['dim_word'],
-                                              dim=options['dim'],
-                                              recurrence_transition_depth=options['enc_recurrence_transition_depth'])
-    if options['enc_depth'] > 1:
-        for level in range(2, options['enc_depth'] + 1):
-            prefix_f = pp('encoder', level)
-            prefix_r = pp('encoder_r', level)
+    suffixesEncoders=['']
+    if options['two_encoders']:
+        suffixesEncoders=['encsf','encfactors']
 
-            if level <= options['enc_depth_bidirectional']:
-                params = get_layer_param(options['encoder'])(options, params,
-                                                             prefix=prefix_f,
-                                                             nin=options['dim'],
-                                                             dim=options['dim'],
-                                                             recurrence_transition_depth=options['enc_recurrence_transition_depth'])
-                params = get_layer_param(options['encoder'])(options, params,
-                                                             prefix=prefix_r,
-                                                             nin=options['dim'],
-                                                             dim=options['dim'],
-                                                             recurrence_transition_depth=options['enc_recurrence_transition_depth'])
-            else:
-                params = get_layer_param(options['encoder'])(options, params,
-                                                             prefix=prefix_f,
-                                                             nin=options['dim'] * 2,
-                                                             dim=options['dim'] * 2,
-                                                             recurrence_transition_depth=options['enc_recurrence_transition_depth'])
+    for suffixEncoder in suffixesEncoders:
+        # encoder: bidirectional RNN
+        params = get_layer_param(options['encoder'])(options, params,
+                                                  prefix='encoder'+suffixEncoder,
+                                                  nin=options['dim_word'],
+                                                  dim=options['dim'],
+                                                  recurrence_transition_depth=options['enc_recurrence_transition_depth'])
+        params = get_layer_param(options['encoder'])(options, params,
+                                                  prefix='encoder_r'+suffixEncoder,
+                                                  nin=options['dim_word'],
+                                                  dim=options['dim'],
+                                                  recurrence_transition_depth=options['enc_recurrence_transition_depth'])
+        if options['enc_depth'] > 1:
+            for level in range(2, options['enc_depth'] + 1):
+                prefix_f = pp('encoder', level)+suffixEncoder
+                prefix_r = pp('encoder_r', level)+suffixEncoder
+
+                if level <= options['enc_depth_bidirectional']:
+                    params = get_layer_param(options['encoder'])(options, params,
+                                                                 prefix=prefix_f,
+                                                                 nin=options['dim'],
+                                                                 dim=options['dim'],
+                                                                 recurrence_transition_depth=options['enc_recurrence_transition_depth'])
+                    params = get_layer_param(options['encoder'])(options, params,
+                                                                 prefix=prefix_r,
+                                                                 nin=options['dim'],
+                                                                 dim=options['dim'],
+                                                                 recurrence_transition_depth=options['enc_recurrence_transition_depth'])
+                else:
+                    params = get_layer_param(options['encoder'])(options, params,
+                                                                 prefix=prefix_f,
+                                                                 nin=options['dim'] * 2,
+                                                                 dim=options['dim'] * 2,
+                                                                 recurrence_transition_depth=options['enc_recurrence_transition_depth'])
 
 
     ctxdim = 2 * options['dim']
@@ -256,11 +261,8 @@ def init_params(options):
 
 
 # bidirectional RNN encoder: take input x (optionally with mask), and produce sequence of context vectors (ctx)
-def build_encoder(tparams, options, dropout, x_mask=None, sampling=False):
+def build_encoder(x,tparams, options, dropout, suffix='' x_mask=None, sampling=False):
 
-    x = tensor.tensor3('x', dtype='int64')
-    # source text; factors 1; length 5; batch size 10
-    x.tag.test_value = (numpy.random.rand(1, 5, 10)*100).astype('int64')
 
     # for the backward rnn, we just need to invert x
     xr = x[:,::-1]
@@ -273,10 +275,10 @@ def build_encoder(tparams, options, dropout, x_mask=None, sampling=False):
     n_samples = x.shape[2]
 
     # word embedding for forward rnn (source)
-    emb = get_layer_constr('embedding')(tparams, x, suffix='', factors= options['factors'])
+    emb = get_layer_constr('embedding')(tparams, x, suffix=suffix, factors= options['factors'])
 
     # word embedding for backward rnn (source)
-    embr = get_layer_constr('embedding')(tparams, xr, suffix='', factors= options['factors'])
+    embr = get_layer_constr('embedding')(tparams, xr, suffix=suffix, factors= options['factors'])
 
     if options['use_dropout']:
         source_dropout = dropout((n_timesteps, n_samples, 1), options['dropout_source'])
@@ -293,7 +295,7 @@ def build_encoder(tparams, options, dropout, x_mask=None, sampling=False):
 
     ## level 1
     proj = get_layer_constr(options['encoder'])(tparams, emb, options, dropout,
-                                                prefix='encoder',
+                                                prefix='encoder'+suffix,
                                                 mask=x_mask,
                                                 dropout_probability_below=options['dropout_embedding'],
                                                 dropout_probability_rec=options['dropout_hidden'],
@@ -301,7 +303,7 @@ def build_encoder(tparams, options, dropout, x_mask=None, sampling=False):
                                                 truncate_gradient=options['encoder_truncate_gradient'],
                                                 profile=profile)
     projr = get_layer_constr(options['encoder'])(tparams, embr, options, dropout,
-                                                 prefix='encoder_r',
+                                                 prefix='encoder_r'+suffix,
                                                  mask=xr_mask,
                                                  dropout_probability_below=options['dropout_embedding'],
                                                  dropout_probability_rec=options['dropout_hidden'],
@@ -316,8 +318,8 @@ def build_encoder(tparams, options, dropout, x_mask=None, sampling=False):
 
     ## bidirectional levels before merge
     for level in range(2, options['enc_depth_bidirectional'] + 1):
-        prefix_f = pp('encoder', level)
-        prefix_r = pp('encoder_r', level)
+        prefix_f = pp('encoder', level)+suffix
+        prefix_r = pp('encoder_r', level)+suffix
 
         # run forward on previous backward and backward on previous forward
         input_f = projr[0][::-1]
@@ -357,7 +359,7 @@ def build_encoder(tparams, options, dropout, x_mask=None, sampling=False):
     for level in range(options['enc_depth_bidirectional'] + 1, options['enc_depth'] + 1):
 
         ctx += get_layer_constr(options['encoder'])(tparams, ctx, options, dropout,
-                                                   prefix=pp('encoder', level),
+                                                   prefix=pp('encoder', level)+suffix,
                                                    mask=x_mask,
                                                    dropout_probability_below=options['dropout_hidden'],
                                                    dropout_probability_rec=options['dropout_hidden'],
@@ -365,7 +367,7 @@ def build_encoder(tparams, options, dropout, x_mask=None, sampling=False):
                                                    truncate_gradient=options['encoder_truncate_gradient'],
                                                    profile=profile)[0]
 
-    return x, ctx
+    return ctx
 
 
 # RNN decoder (including embedding and feedforward layer before output)
@@ -835,7 +837,21 @@ def build_model(tparams, options):
     y.tag.test_value = (numpy.random.rand(8, 10)*100).astype('int64')
     y_mask.tag.test_value = numpy.ones(shape=(8, 10)).astype(floatX)
 
-    x, ctx = build_encoder(tparams, options, dropout, x_mask, sampling=False)
+
+    x = tensor.tensor3('x', dtype='int64')
+    # source text; factors 1; length 5; batch size 10
+    x.tag.test_value = (numpy.random.rand(1, 5, 10)*100).astype('int64')
+
+    if options['two_encoders']:
+        if options['two_encoders_optimize_sf']:
+            ctx = build_encoder(x,tparams, options, dropout,suffix='encsf', x_mask, sampling=False)
+        elif options['two_encoders_optimize_factors']:
+            ctx = build_encoder(x,tparams, options, dropout,suffix='encfactors', x_mask, sampling=False)
+        else:
+            assert False, "encoder not specified"
+    else:
+        ctx = build_encoder(x,tparams, options, dropout,suffix='', x_mask, sampling=False)
+
     n_samples = x.shape[2]
 
     # mean of the context (across time) will be used to initialize decoder rnn
@@ -920,14 +936,30 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
 
     dropout = dropout_constr(options, use_noise, trng, sampling=True)
 
-    x, ctx = build_encoder(tparams, options, dropout, x_mask=None, sampling=True)
+    x = tensor.tensor3('x', dtype='int64')
+    # source text; factors 1; length 5; batch size 10
+    x.tag.test_value = (numpy.random.rand(1, 5, 10)*100).astype('int64')
+
+    if options['two_encoders']:
+        ctx_sf = build_encoder(x,tparams, options, dropout,suffix='encsf', x_mask, sampling=True)
+        ctx_sf_mean=ctx_sf.mean(0)
+        ctx_factors = build_encoder(x,tparams, options, dropout,suffix='encfactors', x_mask, sampling=True)
+        ctx_factors_mean=ctx_factors.mean(0)
+    else:
+        ctx = build_encoder(x,tparams, options, dropout, suffix='', x_mask=None, sampling=True)
+        ctx_mean = ctx.mean(0)
+
     n_samples = x.shape[2]
 
     # get the input for decoder rnn initializer mlp
-    ctx_mean = ctx.mean(0)
+
     # ctx_mean = concatenate([proj[0][-1],projr[0][-1]], axis=proj[0].ndim-2)
 
-    init_state = get_layer_constr('ff')(tparams, ctx_mean, options, dropout,
+    if options['two_encoders']:
+        ctx_mean0=ctx_sf_mean
+    else:
+        ctx_mean0=ctx_mean
+    init_state = get_layer_constr('ff')(tparams, ctx_mean0, options, dropout,
                                     dropout_probability=options['dropout_hidden'],
                                     prefix='ff_state', activ='tanh')
 
@@ -938,7 +970,13 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
 
     if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
         # initial decoder state for the factors decoder, TODO: dropout?
-        init_state_factors = get_layer_constr('ff')(tparams, ctx_mean, options, dropout,
+
+        if options['two_encoders']:
+            ctx_mean1=ctx_factors_mean
+        else:
+            ctx_mean1=ctx_mean
+
+        init_state_factors = get_layer_constr('ff')(tparams, ctx_mean1, options, dropout,
                                         dropout_probability=options['dropout_hidden'],
                                         prefix='ff_state_factor1', activ='tanh')
 
@@ -1069,7 +1107,11 @@ def build_full_sampler(tparams, options, use_noise, trng, greedy=False):
     else:
         x_mask = None
 
-    x, ctx = build_encoder(tparams, options, dropout, x_mask, sampling=True)
+    x = tensor.tensor3('x', dtype='int64')
+    # source text; factors 1; length 5; batch size 10
+    x.tag.test_value = (numpy.random.rand(1, 5, 10)*100).astype('int64')
+
+    ctx = build_encoder(x,tparams, options, dropout, x_mask, sampling=True)
     n_samples = x.shape[2]
 
     if x_mask:
@@ -1565,7 +1607,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
         if debug:
             print >>sys.stderr,"surface forms, next_p, model 0 for each hypothesis"
             for debug_i,row in enumerate(next_p[0]):
-                print >> sys.stderr,"  hyp {} sample (score = {} ): {}, last next_w: {}, last next_w_factors: {} ".format(debug_i,hyp_scores[debug_i],hyp_samples[debug_i],next_w[debug_i], next_w_factors[debug_i])
+                print >> sys.stderr,"  hyp {} sample (score = {} ): {}, last next_w: {}, last next_w_factors: {} ".format(debug_i,hyp_scores[debug_i],hyp_samples[debug_i],next_w[debug_i], next_w_factors[debug_i] if not factors_fs_at_once else )
                 print >> sys.stderr,"  hyp {}, state factors decoder: {}".format(debug_i,next_state_factors[0][debug_i][0][:20])
                 print >> sys.stderr,"  hyp {}, state sf decoder: {}".format(debug_i,next_state[0][debug_i][0][:20])
                 for word_id, value in enumerate(row):
@@ -2160,7 +2202,12 @@ def train(dim_word=512,  # word vector dimensionality
     logging.info('Done')
 
     if model_options['objective'] == 'CE':
-        cost = cost.mean()
+        if model_options['two_encoders_optimize_sf']:
+            cost= cost_sf.mean()
+        elif model_options['two_encoders_optimize_factors']:
+            cost = cost_factors.mean()
+        else:
+            cost = cost.mean()
     elif model_options['objective'] == 'RAML':
         sample_weights = tensor.vector('sample_weights', dtype='floatX')
         cost *= sample_weights
@@ -2720,6 +2767,7 @@ if __name__ == '__main__':
     network.add_argument('--multiple_decoders_connection_state', action="store_true")
     network.add_argument('--combination_sf_factors_concat', action="store_true")
     network.add_argument('--independent_ling_decoders', action="store_true")
+    network.add_argument('--two_encoders', action="store_true")
 
     training = parser.add_argument_group('training parameters')
     training.add_argument('--maxlen', type=int, default=100, metavar='INT',
@@ -2758,6 +2806,8 @@ if __name__ == '__main__':
     training.add_argument('--decoder_truncate_gradient', type=int, default=-1, metavar='INT',
                          help="truncate BPTT gradients in the encoder to this value. Use -1 for no truncation (default: %(default)s)")
     training.add_argument('--freeze_ling_decoders', action="store_true")
+    training.add_argument('--two_encoders_optimize_sf', action="store_true")
+    training.add_argument('--two_encoders_optimize_factors', action="store_true")
 
     validation = parser.add_argument_group('validation parameters')
     validation.add_argument('--valid_datasets', type=str, default=None, metavar='PATH', nargs=2,
