@@ -944,9 +944,9 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     x.tag.test_value = (numpy.random.rand(1, 5, 10)*100).astype('int64')
 
     if options['two_encoders']:
-        ctx_sf = build_encoder(x,tparams, options, dropout,'encsf', x_mask, sampling=True)
+        ctx_sf = build_encoder(x,tparams, options, dropout,'encsf', x_mask=None, sampling=True)
         ctx_sf_mean=ctx_sf.mean(0)
-        ctx_factors = build_encoder(x,tparams, options, dropout,'encfactors', x_mask, sampling=True)
+        ctx_factors = build_encoder(x,tparams, options, dropout,'encfactors', x_mask=None, sampling=True)
         ctx_factors_mean=ctx_factors.mean(0)
     else:
         ctx = build_encoder(x,tparams, options, dropout, suffix='', x_mask=None, sampling=True)
