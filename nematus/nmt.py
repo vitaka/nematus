@@ -106,17 +106,20 @@ def prepare_data(seqs_x, seqs_y, weights=None, maxlen=None, n_words_src=30000,
 def init_params(options):
     params = OrderedDict()
 
+    suffixesEncoders=['']
+    if options['two_encoders']:
+        suffixesEncoders=['encsf','encfactors']
+
     # embedding
-    params = get_layer_param('embedding')(options, params, options['n_words_src'], options['dim_per_factor'], options['factors'], suffix='')
+    for suffixEncoder in suffixesEncoders:
+        params = get_layer_param('embedding')(options, params, options['n_words_src'], options['dim_per_factor'], options['factors'], suffix=suffixEncoder)
     if not options['tie_encoder_decoder_embeddings']:
         params = get_layer_param('embedding')(options, params, options['n_words'], options['dim_word'], suffix='_dec')
         if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
             params = get_layer_param('embedding')(options, params, options['n_words_factor1'], options['dim_word'], suffix='_dec_factor1')
 
 
-    suffixesEncoders=['']
-    if options['two_encoders']:
-        suffixesEncoders=['encsf','encfactors']
+
 
     for suffixEncoder in suffixesEncoders:
         # encoder: bidirectional RNN
