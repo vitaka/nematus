@@ -948,6 +948,8 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
         ctx_sf_mean=ctx_sf.mean(0)
         ctx_factors = build_encoder(x,tparams, options, dropout,'encfactors', x_mask=None, sampling=True)
         ctx_factors_mean=ctx_factors.mean(0)
+        #TODO: this is just to prevent runtime errors, but beam search WON'T WORK
+        ctx=ctx_sf
     else:
         ctx = build_encoder(x,tparams, options, dropout, suffix='', x_mask=None, sampling=True)
         ctx_mean = ctx.mean(0)
@@ -991,6 +993,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     logging.info('Building f_init...')
 
     if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
+        #TODO: change this or beam search won't work
         outs = [init_state, ctx, init_state_factors]
         f_init = theano.function([x], outs, name='f_init', profile=profile)
     else:
@@ -2259,7 +2262,7 @@ def train(dim_word=512,  # word vector dimensionality
         updated_params = OrderedDict([(key,value) for (key,value) in updated_params.iteritems() if not key.endswith('_factor1') and not key.startswith('decoder_factor1')  ])
 
     logging.info('Computing gradient...')
-    grads = tensor.grad(cost, wrt=itemlist(updated_params))
+    grads = tensor.grad(cost, wrt=itemlist(updated_params), disconnected_inputs='warn')
     logging.info('Done')
 
     # apply gradient clipping here
