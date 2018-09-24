@@ -1201,7 +1201,7 @@ def build_full_sampler(tparams, options, use_noise, trng, greedy=False):
 # this function iteratively calls f_init and f_next functions.
 def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                stochastic=True, argmax=False, return_alignment=False, suppress_unk=False,
-               return_hyp_graph=False, f_next_factors=None, alternate_factors_fs=False, forced_y_factors=None, max_cands_node=0, weight_probs_factors=None,factors_fs_at_once=False,two_encoders=False,debug=False):
+               return_hyp_graph=False, f_next_factors=None, alternate_factors_fs=False, forced_y_factors=None, forced_y_sf=None, max_cands_node=0, weight_probs_factors=None,factors_fs_at_once=False,two_encoders=False,debug=False):
 
     # k is the beam size we have
     if k > 1 and argmax:
@@ -1453,6 +1453,16 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                         else:
                             if w > 0:
                                 next_p_factors[i][:,w] = -numpy.inf
+
+                if forced_y_sf:
+                    for w in xrange(next_p[i][0].shape[-1]):
+                        if  ii < len(forced_y_sf):
+                            if w != forced_y_sf[ii]:
+                                next_p[i][:,w] = -numpy.inf
+                        else:
+                            if w > 0:
+                                next_p[i][:,w] = -numpy.inf
+
                 if weight_probs_factors != None:
                     next_p_factors[i]=next_p_factors[i]*weight_probs_factors
 
@@ -1611,6 +1621,15 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
 
                 # to more easily manipulate batch size, go from (layers, batch_size, dim) to (batch_size, layers, dim)
                 next_state[i] = numpy.transpose(next_state[i], (1,0,2))
+
+                if forced_y_sf:
+                    for w in xrange(next_p[i][0].shape[-1]):
+                        if  ii < len(forced_y_sf):
+                            if w != forced_y_sf[ii]:
+                                next_p[i][:,w] = -numpy.inf
+                        else:
+                            if w > 0:
+                                next_p[i][:,w] = -numpy.inf
 
                 if suppress_unk:
                     next_p[i][:,1] = -numpy.inf

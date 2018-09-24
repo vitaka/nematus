@@ -81,6 +81,9 @@ class TranslationSettings(BaseSettings):
             self._parser.add_argument('--force_linguistic_factor_decoding', '-F', type=argparse.FileType('r'),
                                       default=None, metavar='PATH',
                                       help="File with expected linguistic factor translation for each input line")
+            self._parser.add_argument('--force_surface_form_decoding', '-F', type=argparse.FileType('r'),
+                                      default=None, metavar='PATH',
+                                      help="File with expected surface form translation for each input line")
             self._parser.add_argument('--output', '-o', type=argparse.FileType('w'),
                                       default=sys.stdout, metavar='PATH',
                                       help="Output file (default: standard output)")

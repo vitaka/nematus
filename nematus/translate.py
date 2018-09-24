@@ -220,6 +220,7 @@ class Translator(object):
         word_idict_trg[1] = 'UNK'
 
         self._word_idict_trg = word_idict_trg
+        self._word_dict_trg= word_dict_trg
 
         if self.tl_factors:
             factor_dict_trg = load_dict(dictionary_target[1])
@@ -352,12 +353,12 @@ class Translator(object):
             idx = input_item.idx
             request_id = input_item.request_id
 
-            output_item = self._translate(process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, input_item.forced_y_factors)
+            output_item = self._translate(process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, input_item.forced_y_factors,input_item.forced_y_sf)
             self._output_queue.put((request_id, idx, output_item))
 
         return
 
-    def _translate(self, process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, forced_y_factors):
+    def _translate(self, process_id, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample, forced_y_factors,forced_y_sf):
         """
         Actual translation (model sampling).
         """
@@ -371,7 +372,7 @@ class Translator(object):
         logging.debug('{0} - {1}\n'.format(process_id, idx))
 
         # sample given an input sequence and obtain scores
-        sample, score, word_probs, alignment, hyp_graph = self._sample(input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample,forced_y_factors)
+        sample, score, word_probs, alignment, hyp_graph = self._sample(input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample,forced_y_factors,forced_y_sf)
 
         # normalize scores according to sequence lengths
         if normalization_alpha:
@@ -387,7 +388,7 @@ class Translator(object):
 
         return output_item
 
-    def _sample(self, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample,forced_y_factors):
+    def _sample(self, input_item, trng, fs_init, fs_next, fs_next_factors, gen_sample,forced_y_factors,forced_y_sf):
         """
         Sample from model.
         """
@@ -411,16 +412,17 @@ class Translator(object):
                           stochastic=False, argmax=False,
                           return_alignment=return_alignment,
                           suppress_unk=suppress_unk,
-                          return_hyp_graph=return_hyp_graph, f_next_factors=fs_next_factors, alternate_factors_fs=self._alternate_factors_fs,forced_y_factors=forced_y_factors,max_cands_node=self._max_cands_node, weight_probs_factors=self._weight_probs_factors, factors_fs_at_once=self._factors_fs_at_once,two_encoders=self._two_encoders,debug=self._debug)
+                          return_hyp_graph=return_hyp_graph, f_next_factors=fs_next_factors, alternate_factors_fs=self._alternate_factors_fs,forced_y_factors=forced_y_factors,forced_y_sf=forced_y_sf,max_cands_node=self._max_cands_node, weight_probs_factors=self._weight_probs_factors, factors_fs_at_once=self._factors_fs_at_once,two_encoders=self._two_encoders,debug=self._debug)
 
 
     ### WRITING TO AND READING FROM QUEUES ###
 
-    def _send_jobs(self, input_, translation_settings, forced_):
+    def _send_jobs(self, input_, translation_settings, forced_, forced_sf):
         """
         """
         source_sentences = []
         forced_linguistic_factors=[]
+        forced_surface_forms=[]
         for idx, line in enumerate(input_):
             if translation_settings.char_level:
                 words = list(line.decode('utf-8').strip())
@@ -448,6 +450,14 @@ class Translator(object):
                         w=w.split('|')[-1]
                     w=self._factor_dict_trg[w] if w in self._factor_dict_trg else 1
                     y_factors.append(w)
+            y_sf=[]
+            if forced_sf:
+                factors=forced_[idx].strip().split()
+                for w in factors:
+                    if '|' in w:
+                        w=w.split('|')[0]
+                    w=self._word_dict_trg[w] if w in self._word_dict_trg else 1
+                    y_sf.append(w)
 
             input_item = QueueItem(verbose=self._verbose,
                                    return_hyp_graph=translation_settings.get_search_graph,
@@ -460,7 +470,8 @@ class Translator(object):
                                    seq=x,
                                    idx=idx,
                                    request_id=translation_settings.request_id,
-                                   forced_y_factors= y_factors if forced_ else None)
+                                   forced_y_factors= y_factors if forced_ else None,
+                                   forced_y_sf=y_sf if forced_sf else None)
 
             self._input_queue.put(input_item)
             source_sentences.append(words)
@@ -497,12 +508,12 @@ class Translator(object):
 
     ### EXPOSED TRANSLATION FUNCTIONS ###
 
-    def translate(self, source_segments, translation_settings, forced_linguistic_factors):
+    def translate(self, source_segments, translation_settings, forced_linguistic_factors, forced_surface_forms):
         """
         Returns the translation of @param source_segments.
         """
         logging.info('Translating {0} segments...\n'.format(len(source_segments)))
-        n_samples, source_sentences = self._send_jobs(source_segments, translation_settings,forced_linguistic_factors)
+        n_samples, source_sentences = self._send_jobs(source_segments, translation_settings,forced_linguistic_factors,forced_surface_forms)
 
         translations = []
         for i, trans in enumerate(self._retrieve_jobs(n_samples, translation_settings.request_id)):
@@ -541,14 +552,17 @@ class Translator(object):
                 translations.append(translation)
         return translations
 
-    def translate_file(self, input_object, translation_settings,forced_linguistic_factors_file):
+    def translate_file(self, input_object, translation_settings,forced_linguistic_factors_file,forced_surface_forms_file):
         """
         """
         source_segments = input_object.readlines()
         forced_linguistic_factors=None
+        forced_surface_forms=None
         if forced_linguistic_factors_file:
             forced_linguistic_factors=forced_linguistic_factors_file.readlines()
-        return self.translate(source_segments, translation_settings,forced_linguistic_factors)
+        if forced_surface_forms_file:
+            forced_surface_forms=forced_surface_forms_file.readlines()
+        return self.translate(source_segments, translation_settings,forced_linguistic_factors,forced_surface_forms)
 
 
     def translate_string(self, segment, translation_settings):
@@ -639,7 +653,7 @@ def main(input_file, output_file, translation_settings):
     (or STDOUT).
     """
     translator = Translator(translation_settings)
-    translations = translator.translate_file(input_file, translation_settings, translation_settings.force_linguistic_factor_decoding)
+    translations = translator.translate_file(input_file, translation_settings, translation_settings.force_linguistic_factor_decoding,translation_settings.force_surface_form_decoding)
     translator.write_translations(output_file, translations, translation_settings)
 
     logging.info('Done')
