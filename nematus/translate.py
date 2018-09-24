@@ -146,6 +146,9 @@ class Translator(object):
         self._alternate_factors_fs=False
         if  self._options[0]['multiple_decoders_connection_feedback']:
             self._alternate_factors_fs=True
+        self._two_encoders=False
+        if self._options[0]['two_encoders'] == True:
+            self._two_encoders=True
 
         for option in self._options:
             if 'combination_sf_factors_concat' not in option:
@@ -408,7 +411,7 @@ class Translator(object):
                           stochastic=False, argmax=False,
                           return_alignment=return_alignment,
                           suppress_unk=suppress_unk,
-                          return_hyp_graph=return_hyp_graph, f_next_factors=fs_next_factors, alternate_factors_fs=self._alternate_factors_fs,forced_y_factors=forced_y_factors,max_cands_node=self._max_cands_node, weight_probs_factors=self._weight_probs_factors, factors_fs_at_once=self._factors_fs_at_once,debug=self._debug)
+                          return_hyp_graph=return_hyp_graph, f_next_factors=fs_next_factors, alternate_factors_fs=self._alternate_factors_fs,forced_y_factors=forced_y_factors,max_cands_node=self._max_cands_node, weight_probs_factors=self._weight_probs_factors, factors_fs_at_once=self._factors_fs_at_once,two_encoders=self._two_encoders,debug=self._debug)
 
 
     ### WRITING TO AND READING FROM QUEUES ###

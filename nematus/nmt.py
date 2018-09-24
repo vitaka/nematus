@@ -993,12 +993,13 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     logging.info('Building f_init...')
 
     if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
-        #TODO: change this or beam search won't work
-        outs = [init_state, ctx, init_state_factors]
-        f_init = theano.function([x], outs, name='f_init', profile=profile)
+        if options['two_encoders']:
+            outs = [init_state, ctx_sf, init_state_factors, ctx_factors]
+        else:
+            outs = [init_state, ctx, init_state_factors]
     else:
         outs = [init_state, ctx]
-        f_init = theano.function([x], outs, name='f_init', profile=profile)
+    f_init = theano.function([x], outs, name='f_init', profile=profile)
     logging.info('Done')
 
     # x: 1 x 1
@@ -1200,7 +1201,7 @@ def build_full_sampler(tparams, options, use_noise, trng, greedy=False):
 # this function iteratively calls f_init and f_next functions.
 def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
                stochastic=True, argmax=False, return_alignment=False, suppress_unk=False,
-               return_hyp_graph=False, f_next_factors=None, alternate_factors_fs=False, forced_y_factors=None, max_cands_node=0, weight_probs_factors=None,factors_fs_at_once=False,debug=False):
+               return_hyp_graph=False, f_next_factors=None, alternate_factors_fs=False, forced_y_factors=None, max_cands_node=0, weight_probs_factors=None,factors_fs_at_once=False,two_encoders=False,debug=False):
 
     # k is the beam size we have
     if k > 1 and argmax:
@@ -1239,6 +1240,7 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
     next_state = [None]*num_models
     next_state_factors = [None]*num_models
     ctx0 = [None]*num_models
+    ctx0_factors=[None]*num_models
     next_p = [None]*num_models
     next_p_factors=[None]*num_models
     dec_alphas = [None]*num_models
@@ -1252,6 +1254,8 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
         next_state[i] = numpy.tile( ret[0] , (live_k, 1, 1))
         next_state_factors[i] = numpy.tile( ret[2] , (live_k, 1, 1))
         ctx0[i] = ret[1]
+        if two_encoders:
+            ctx0_factors[i]=ret[3]
 
     next_w = -1 * numpy.ones((live_k,)).astype('int64')
     next_w_factors = -1 * numpy.ones((live_k,)).astype('int64')   # bos indicator
@@ -1264,7 +1268,10 @@ def gen_sample(f_init, f_next, x, trng=None, k=1, maxlen=30,
             #stochastic is not supported
             for i in xrange(num_models):
 
-                ctx = numpy.tile(ctx0[i], [live_k, 1])
+                if two_encoders:
+                    ctx = numpy.tile(ctx0_factors[i], [live_k, 1])
+                else:
+                    ctx = numpy.tile(ctx0[i], [live_k, 1])
 
                 # for theano function, go from (batch_size, layers, dim) to (layers, batch_size, dim)
                 next_state_factors[i] = numpy.transpose(next_state_factors[i], (1,0,2))
