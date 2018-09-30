@@ -583,7 +583,10 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
             if options['independent_ling_decoders']:
                 emb_for_factors_dec=  emb_factors
             else:
-                emb_for_factors_dec= concatenate([emb,emb_factors],axis=1)
+                if options['two_encoders']:
+                    emb_for_factors_dec= concatenate([emb_for_opt_factor1,emb_factors_for_opt_factor1],axis=1)
+                else:
+                    emb_for_factors_dec= concatenate([emb,emb_factors],axis=1)
         else:
             #Build feedback to surface form decoder (tanh over concatenation)
             emb_for_fs_dec= get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=1), options, dropout, prefix='feedback_fs')
@@ -629,7 +632,10 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
             if options['independent_ling_decoders']:
                 emb_for_factors_dec=  emb_factors
             else:
-                emb_for_factors_dec=  concatenate([emb,emb_factors],axis=2)
+                if options['two_encoders']:
+                    emb_for_factors_dec= concatenate([emb_for_opt_factor1,emb_factors_for_opt_factor1],axis=2)
+                else:
+                    emb_for_factors_dec= concatenate([emb,emb_factors],axis=2)
         else:
             #Build feedback to surface form decoder (tanh over concatenation)
             emb_for_fs_dec= get_layer_constr('ff')(tparams, concatenate([emb,emb_factors_unshifted],axis=2), options, dropout, prefix='feedback_fs')
