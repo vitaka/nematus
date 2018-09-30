@@ -115,8 +115,12 @@ def init_params(options):
         params = get_layer_param('embedding')(options, params, options['n_words_src'], options['dim_per_factor'], options['factors'], suffix=suffixEncoder)
     if not options['tie_encoder_decoder_embeddings']:
         params = get_layer_param('embedding')(options, params, options['n_words'], options['dim_word'], suffix='_dec')
+        if options['two_encoders']:
+            params = get_layer_param('embedding')(options, params, options['n_words'], options['dim_word'], suffix='_dec_for_opt_factor1')
         if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
             params = get_layer_param('embedding')(options, params, options['n_words_factor1'], options['dim_word'], suffix='_dec_factor1')
+            if options['two_encoders']:
+                params = get_layer_param('embedding')(options, params, options['n_words_factor1'], options['dim_word'], suffix='_dec_factor1_for_opt_factor1')
 
 
 
@@ -545,9 +549,18 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
     decoder_embedding_suffix = '' if options['tie_encoder_decoder_embeddings'] else '_dec'
     emb = get_layer_constr('embedding')(tparams, y, suffix=decoder_embedding_suffix)
     emb_factors = get_layer_constr('embedding')(tparams, y_factors,suffix=decoder_embedding_suffix+'_factor1')
+
+    if options['two_encoders']:
+        emb_for_opt_factor1=get_layer_constr('embedding')(tparams, y, suffix=decoder_embedding_suffix+'_for_opt_factor1')
+        emb_factors_for_opt_factor1 = get_layer_constr('embedding')(tparams, y_factors,suffix=decoder_embedding_suffix+'_factor1_for_opt_factor1')
+
     if options['use_dropout']:
         emb *= target_dropout
         emb_factors *= target_dropout #TODO: duplicate?
+
+        if options['two_encoders']:
+            emb_for_opt_factor1*= target_dropout
+            emb_factors_for_opt_factor1*= target_dropout
 
     if sampling:
         emb = tensor.switch(y[:, None] < 0,
@@ -556,6 +569,14 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
         emb_factors = tensor.switch(y_factors[:, None] < 0,
             tensor.zeros((1, options['dim_word'])),
             emb_factors)
+
+        if options['two_encoders']:
+            emb_for_opt_factor1 = tensor.switch(y[:, None] < 0,
+                tensor.zeros((1, options['dim_word'])),
+                emb_for_opt_factor1)
+            emb_factors_for_opt_factor1 = tensor.switch(y_factors[:, None] < 0,
+                tensor.zeros((1, options['dim_word'])),
+                emb_factors_for_opt_factor1)
 
         if options['combination_sf_factors_concat']:
             emb_for_fs_dec= concatenate([emb,emb_factors],axis=1)
@@ -568,9 +589,15 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
             emb_for_fs_dec= get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=1), options, dropout, prefix='feedback_fs')
             #Build feedback to MSD decoder
             if options['independent_ling_decoders']:
-                emb_for_factors_dec=  emb_factors
+                if options['two_encoders']:
+                    emb_for_factors_dec=  emb_factors_for_opt_factor1
+                else:
+                    emb_for_factors_dec=  emb_factors
             else:
-                emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=1), options, dropout, prefix='feedback_factors')
+                if options['two_encoders']:
+                    emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb_factors_for_opt_factor1,emb_factors_for_opt_factor1],axis=1), options, dropout, prefix='feedback_factors')
+                else:
+                    emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=1), options, dropout, prefix='feedback_factors')
     else:
         emb_shifted = tensor.zeros_like(emb)
         emb_shifted = tensor.set_subtensor(emb_shifted[1:], emb[:-1])
@@ -585,6 +612,18 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
 
         emb_factors = emb_factors_shifted
 
+        if options['two_encoders']:
+            emb_for_opt_factor1_shifted = tensor.zeros_like(emb_for_opt_factor1)
+            emb_for_opt_factor1_shifted = tensor.set_subtensor(emb_for_opt_factor1_shifted[1:], emb_for_opt_factor1[:-1])
+            emb_for_opt_factor1 = emb_for_opt_factor1_shifted
+
+            emb_factors_for_opt_factor1_shifted = tensor.zeros_like(emb_factors_for_opt_factor1)
+            emb_factors_for_opt_factor1_shifted = tensor.set_subtensor(emb_factors_for_opt_factor1_shifted[1:], emb_factors_for_opt_factor1[:-1])
+
+            emb_factors_for_opt_factor1_unshifted=tensor.zeros_like(emb_factors_for_opt_factor1)
+            emb_factors_for_opt_factor1_unshifted = tensor.set_subtensor(emb_factors_for_opt_factor1_unshifted[:], emb_factors_for_opt_factor1[:])
+            emb_factors_for_opt_factor1 = emb_factors_for_opt_factor1_shifted
+
         if options['combination_sf_factors_concat']:
             emb_for_fs_dec= concatenate([emb,emb_factors_unshifted],axis=2)
             if options['independent_ling_decoders']:
@@ -595,10 +634,16 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
             #Build feedback to surface form decoder (tanh over concatenation)
             emb_for_fs_dec= get_layer_constr('ff')(tparams, concatenate([emb,emb_factors_unshifted],axis=2), options, dropout, prefix='feedback_fs')
             if options['independent_ling_decoders']:
-                emb_for_factors_dec=  emb_factors
+                if options['two_encoders']:
+                    emb_for_factors_dec=  emb_factors_for_opt_factor1
+                else:
+                    emb_for_factors_dec=  emb_factors
             else:
                 #Build feedback to MSD decoder
-                emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=2), options, dropout, prefix='feedback_factors')
+                if options['two_encoders']:
+                    emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb_for_opt_factor1,emb_factors_for_opt_factor1],axis=2), options, dropout, prefix='feedback_factors')
+                else:
+                    emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=2), options, dropout, prefix='feedback_factors')
 
 
     #TODO: loop over different dropouts? and pctx_?
