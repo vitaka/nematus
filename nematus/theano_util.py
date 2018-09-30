@@ -7,6 +7,7 @@ import json
 import cPickle as pkl
 import numpy
 from collections import OrderedDict
+import logging
 
 import theano
 import theano.tensor as tensor

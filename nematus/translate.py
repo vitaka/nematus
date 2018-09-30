@@ -452,7 +452,7 @@ class Translator(object):
                     y_factors.append(w)
             y_sf=[]
             if forced_sf:
-                factors=forced_[idx].strip().split()
+                factors=forced_sf[idx].strip().split()
                 for w in factors:
                     if '|' in w:
                         w=w.split('|')[0]
