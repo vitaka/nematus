@@ -147,8 +147,9 @@ class Translator(object):
         if  self._options[0]['multiple_decoders_connection_feedback']:
             self._alternate_factors_fs=True
         self._two_encoders=False
-        if self._options[0]['two_encoders'] == True:
-            self._two_encoders=True
+        if 'two_encoders' in self._options[0]:
+            if self._options[0]['two_encoders'] == True:
+                self._two_encoders=True
 
         for option in self._options:
             if 'combination_sf_factors_concat' not in option:

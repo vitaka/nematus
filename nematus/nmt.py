@@ -107,7 +107,7 @@ def init_params(options):
     params = OrderedDict()
 
     suffixesEncoders=['']
-    if options['two_encoders']:
+    if options.get('two_encoders'):
         suffixesEncoders=['encsf','encfactors']
 
     # embedding
@@ -115,11 +115,11 @@ def init_params(options):
         params = get_layer_param('embedding')(options, params, options['n_words_src'], options['dim_per_factor'], options['factors'], suffix=suffixEncoder)
     if not options['tie_encoder_decoder_embeddings']:
         params = get_layer_param('embedding')(options, params, options['n_words'], options['dim_word'], suffix='_dec')
-        if options['two_encoders']:
+        if options.get('two_encoders'):
             params = get_layer_param('embedding')(options, params, options['n_words'], options['dim_word'], suffix='_dec_for_opt_factor1')
         if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
             params = get_layer_param('embedding')(options, params, options['n_words_factor1'], options['dim_word'], suffix='_dec_factor1')
-            if options['two_encoders']:
+            if options.get('two_encoders'):
                 params = get_layer_param('embedding')(options, params, options['n_words_factor1'], options['dim_word'], suffix='_dec_factor1_for_opt_factor1')
 
 
@@ -550,7 +550,7 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
     emb = get_layer_constr('embedding')(tparams, y, suffix=decoder_embedding_suffix)
     emb_factors = get_layer_constr('embedding')(tparams, y_factors,suffix=decoder_embedding_suffix+'_factor1')
 
-    if options['two_encoders']:
+    if options.get('two_encoders'):
         emb_for_opt_factor1=get_layer_constr('embedding')(tparams, y, suffix=decoder_embedding_suffix+'_for_opt_factor1')
         emb_factors_for_opt_factor1 = get_layer_constr('embedding')(tparams, y_factors,suffix=decoder_embedding_suffix+'_factor1_for_opt_factor1')
 
@@ -558,7 +558,7 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
         emb *= target_dropout
         emb_factors *= target_dropout #TODO: duplicate?
 
-        if options['two_encoders']:
+        if options.get('two_encoders'):
             emb_for_opt_factor1*= target_dropout
             emb_factors_for_opt_factor1*= target_dropout
 
@@ -570,7 +570,7 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
             tensor.zeros((1, options['dim_word'])),
             emb_factors)
 
-        if options['two_encoders']:
+        if options.get('two_encoders'):
             emb_for_opt_factor1 = tensor.switch(y[:, None] < 0,
                 tensor.zeros((1, options['dim_word'])),
                 emb_for_opt_factor1)
@@ -583,7 +583,7 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
             if options['independent_ling_decoders']:
                 emb_for_factors_dec=  emb_factors
             else:
-                if options['two_encoders']:
+                if options.get('two_encoders'):
                     emb_for_factors_dec= concatenate([emb_for_opt_factor1,emb_factors_for_opt_factor1],axis=1)
                 else:
                     emb_for_factors_dec= concatenate([emb,emb_factors],axis=1)
@@ -592,12 +592,12 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
             emb_for_fs_dec= get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=1), options, dropout, prefix='feedback_fs')
             #Build feedback to MSD decoder
             if options['independent_ling_decoders']:
-                if options['two_encoders']:
+                if options.get('two_encoders'):
                     emb_for_factors_dec=  emb_factors_for_opt_factor1
                 else:
                     emb_for_factors_dec=  emb_factors
             else:
-                if options['two_encoders']:
+                if options.get('two_encoders'):
                     emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb_factors_for_opt_factor1,emb_factors_for_opt_factor1],axis=1), options, dropout, prefix='feedback_factors')
                 else:
                     emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=1), options, dropout, prefix='feedback_factors')
@@ -615,7 +615,7 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
 
         emb_factors = emb_factors_shifted
 
-        if options['two_encoders']:
+        if options.get('two_encoders'):
             emb_for_opt_factor1_shifted = tensor.zeros_like(emb_for_opt_factor1)
             emb_for_opt_factor1_shifted = tensor.set_subtensor(emb_for_opt_factor1_shifted[1:], emb_for_opt_factor1[:-1])
             emb_for_opt_factor1 = emb_for_opt_factor1_shifted
@@ -632,7 +632,7 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
             if options['independent_ling_decoders']:
                 emb_for_factors_dec=  emb_factors
             else:
-                if options['two_encoders']:
+                if options.get('two_encoders'):
                     emb_for_factors_dec= concatenate([emb_for_opt_factor1,emb_factors_for_opt_factor1],axis=2)
                 else:
                     emb_for_factors_dec= concatenate([emb,emb_factors],axis=2)
@@ -640,13 +640,13 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
             #Build feedback to surface form decoder (tanh over concatenation)
             emb_for_fs_dec= get_layer_constr('ff')(tparams, concatenate([emb,emb_factors_unshifted],axis=2), options, dropout, prefix='feedback_fs')
             if options['independent_ling_decoders']:
-                if options['two_encoders']:
+                if options.get('two_encoders'):
                     emb_for_factors_dec=  emb_factors_for_opt_factor1
                 else:
                     emb_for_factors_dec=  emb_factors
             else:
                 #Build feedback to MSD decoder
-                if options['two_encoders']:
+                if options.get('two_encoders'):
                     emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb_for_opt_factor1,emb_factors_for_opt_factor1],axis=2), options, dropout, prefix='feedback_factors')
                 else:
                     emb_for_factors_dec=  get_layer_constr('ff')(tparams, concatenate([emb,emb_factors],axis=2), options, dropout, prefix='feedback_factors')
@@ -896,7 +896,7 @@ def build_model(tparams, options):
     # source text; factors 1; length 5; batch size 10
     x.tag.test_value = (numpy.random.rand(1, 5, 10)*100).astype('int64')
 
-    if options['two_encoders']:
+    if options.get('two_encoders'):
         if options['two_encoders_optimize_sf']:
             ctx = build_encoder(x,tparams, options, dropout,'encsf', x_mask, sampling=False)
         elif options['two_encoders_optimize_factors']:
@@ -994,7 +994,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     # source text; factors 1; length 5; batch size 10
     x.tag.test_value = (numpy.random.rand(1, 5, 10)*100).astype('int64')
 
-    if options['two_encoders']:
+    if options.get('two_encoders'):
         ctx_sf = build_encoder(x,tparams, options, dropout,'encsf', x_mask=None, sampling=True)
         ctx_sf_mean=ctx_sf.mean(0)
         ctx_factors = build_encoder(x,tparams, options, dropout,'encfactors', x_mask=None, sampling=True)
@@ -1011,7 +1011,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
 
     # ctx_mean = concatenate([proj[0][-1],projr[0][-1]], axis=proj[0].ndim-2)
 
-    if options['two_encoders']:
+    if options.get('two_encoders'):
         ctx_mean0=ctx_sf_mean
     else:
         ctx_mean0=ctx_mean
@@ -1027,7 +1027,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
         # initial decoder state for the factors decoder, TODO: dropout?
 
-        if options['two_encoders']:
+        if options.get('two_encoders'):
             ctx_mean1=ctx_factors_mean
         else:
             ctx_mean1=ctx_mean
@@ -1044,7 +1044,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
     logging.info('Building f_init...')
 
     if options['multiple_decoders_connection_feedback'] or options['multiple_decoders_connection_state']:
-        if options['two_encoders']:
+        if options.get('two_encoders'):
             outs = [init_state, ctx_sf, init_state_factors, ctx_factors]
         else:
             outs = [init_state, ctx, init_state_factors]
