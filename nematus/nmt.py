@@ -1067,6 +1067,7 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
         init_state_factors = tensor.tensor3('init_state_factors', dtype=floatX)
 
     if options['multiple_decoders_connection_feedback']:
+        #TODO: review use of ctx here
         logit, opt_ret, ret_state, logit_factors, opt_ret_factors, ret_state_factors = build_decoders_connection_feedback(tparams, options, y, y_factors , ctx, init_state, init_state_factors , dropout, x_mask=None, y_mask=None, sampling=True)
     elif options['multiple_decoders_connection_state']:
         logit, opt_ret, ret_state, logit_factors, opt_ret_factors, ret_state_factors = build_decoders_connection_state(tparams, options, y, y_factors , ctx, init_state, init_state_factors , dropout, x_mask=None, y_mask=None, sampling=True)
@@ -1108,7 +1109,10 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
 
     f_next_factors=None
     if options['multiple_decoders_connection_feedback']:
-        inps=[y,y_factors,ctx,init_state_factors]
+        ctxinput=ctx
+        if options.get('two_encoders'):
+            ctxinput=ctx_factors
+        inps=[y,y_factors,ctxinput,init_state_factors]
         outs=[next_probs_factors, next_sample_factors, ret_state_factors]
         if return_alignment:
             outs.append(opt_ret_factors['dec_alphas'])
