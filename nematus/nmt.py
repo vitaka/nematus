@@ -519,7 +519,7 @@ def build_decoder(tparams, options, y, ctx, init_state, dropout, x_mask=None, y_
 # RNN decoder (including embedding and feedforward layer before output)
 #TODO: duplicate dropout?
 #TODO: careful about pctx_ parameter
-def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init_state, init_state_factors, dropout, x_mask=None, y_mask=None, sampling=False, pctx_=None, shared_vars=None):
+def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, ctx_factors, init_state, init_state_factors, dropout, x_mask=None, y_mask=None, sampling=False, pctx_=None, shared_vars=None):
     opt_ret = dict()
     opt_ret_factors = dict()
 
@@ -654,12 +654,12 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
 
     #TODO: loop over different dropouts? and pctx_?
     return_list=[]
-    for factor_suffix,emb_local,init_state_local,y_local, opt_ret_local in [ ['',emb_for_fs_dec,init_state,y,opt_ret] ,['_factor1',emb_for_factors_dec,init_state_factors,y_factors,opt_ret_factors] ]:
+    for factor_suffix,emb_local,init_state_local,y_local, opt_ret_local, ctx_local in [ ['',emb_for_fs_dec,init_state,y,opt_ret, ctx] ,['_factor1',emb_for_factors_dec,init_state_factors,y_factors,opt_ret_factors, ctx_factors] ]:
     #for factor_suffix,emb_local,init_state_local,y_local, opt_ret_local in [ ['',emb,init_state,y,opt_ret] ,['_factor1',emb_factors,init_state_factors,y_factors,opt_ret_factors] ]:
         # decoder - pass through the decoder conditional gru with attention
         proj = get_layer_constr(options['decoder'])(tparams, emb_local, options, dropout,
                                                 prefix='decoder'+factor_suffix,
-                                                mask=y_mask, context=ctx,
+                                                mask=y_mask, context=ctx_local,
                                                 context_mask=x_mask,
                                                 pctx_=pctx_,
                                                 one_step=one_step,
@@ -704,7 +704,7 @@ def build_decoders_connection_feedback(tparams, options, y, y_factors, ctx, init
                 out_state = get_layer_constr(options['decoder_deep'])(tparams, input_, options, dropout,
                                                   prefix=pp('decoder'+factor_suffix, level),
                                                   mask=y_mask,
-                                                  context=ctx,
+                                                  context=ctx_local,
                                                   context_mask=x_mask,
                                                   pctx_=None, #TODO: we can speed up sampler by precomputing this
                                                   one_step=one_step,
@@ -897,12 +897,8 @@ def build_model(tparams, options):
     x.tag.test_value = (numpy.random.rand(1, 5, 10)*100).astype('int64')
 
     if options.get('two_encoders'):
-        if options['two_encoders_optimize_sf']:
-            ctx = build_encoder(x,tparams, options, dropout,'encsf', x_mask, sampling=False)
-        elif options['two_encoders_optimize_factors']:
-            ctx = build_encoder(x,tparams, options, dropout,'encfactors', x_mask, sampling=False)
-        else:
-            assert False, "encoder not specified"
+        ctx = build_encoder(x,tparams, options, dropout,'encsf', x_mask, sampling=False)
+        ctx_factors = build_encoder(x,tparams, options, dropout,'encfactors', x_mask, sampling=False)
     else:
         ctx = build_encoder(x,tparams, options, dropout,'', x_mask, sampling=False)
 
@@ -910,6 +906,9 @@ def build_model(tparams, options):
 
     # mean of the context (across time) will be used to initialize decoder rnn
     ctx_mean = (ctx * x_mask[:, :, None]).sum(0) / x_mask.sum(0)[:, None]
+
+    if options.get('two_encoders'):
+        ctx_factors_mean = (ctx_factors * x_mask[:, :, None]).sum(0) / x_mask.sum(0)[:, None]
 
     # or you can use the last state of forward + backward encoder rnns
     # ctx_mean = concatenate([proj[0][-1], projr[0][-1]], axis=proj[0].ndim-2)
@@ -927,7 +926,11 @@ def build_model(tparams, options):
 
     if options['multiple_decoders_connection_feedback']:
         # initial decoder state for the factors decoder, TODO: dropout?
-        init_state_factors = get_layer_constr('ff')(tparams, ctx_mean, options, dropout,
+        ctx_mean_in=ctx_mean
+        if options.get('two_encoders'):
+            ctx_mean_in=ctx_factors_mean
+
+        init_state_factors = get_layer_constr('ff')(tparams, ctx_mean_in, options, dropout,
                                         dropout_probability=options['dropout_hidden'],
                                         prefix='ff_state_factor1', activ='tanh')
 
@@ -936,7 +939,10 @@ def build_model(tparams, options):
         if options['dec_depth'] > 1:
             init_state_factors = tensor.tile(init_state_factors, (options['dec_depth'], 1, 1))
 
-        logit, opt_ret, _, logit_factors, opt_ret_factors, _ = build_decoders_connection_feedback(tparams, options, y, y_factors , ctx, init_state, init_state_factors , dropout, x_mask=x_mask, y_mask=y_mask, sampling=False)
+        second_ctx=ctx
+        if options.get('two_encoders'):
+            second_ctx=ctx_factors
+        logit, opt_ret, _, logit_factors, opt_ret_factors, _ = build_decoders_connection_feedback(tparams, options, y, y_factors , ctx, second_ctx init_state, init_state_factors , dropout, x_mask=x_mask, y_mask=y_mask, sampling=False)
     elif options['multiple_decoders_connection_state']:
         # initial decoder state for the factors decoder, TODO: dropout?
         init_state_factors = get_layer_constr('ff')(tparams, ctx_mean, options, dropout,
@@ -1066,9 +1072,12 @@ def build_sampler(tparams, options, use_noise, trng, return_alignment=False):
         init_state_factors_old = init_state_factors
         init_state_factors = tensor.tensor3('init_state_factors', dtype=floatX)
 
+
     if options['multiple_decoders_connection_feedback']:
-        #TODO: review use of ctx here
-        logit, opt_ret, ret_state, logit_factors, opt_ret_factors, ret_state_factors = build_decoders_connection_feedback(tparams, options, y, y_factors , ctx, init_state, init_state_factors , dropout, x_mask=None, y_mask=None, sampling=True)
+        second_ctx=ctx
+        if options.get('two_encoders'):
+            second_ctx=ctx_factors
+        logit, opt_ret, ret_state, logit_factors, opt_ret_factors, ret_state_factors = build_decoders_connection_feedback(tparams, options, y, y_factors , ctx, second_ctx, init_state, init_state_factors , dropout, x_mask=None, y_mask=None, sampling=True)
     elif options['multiple_decoders_connection_state']:
         logit, opt_ret, ret_state, logit_factors, opt_ret_factors, ret_state_factors = build_decoders_connection_state(tparams, options, y, y_factors , ctx, init_state, init_state_factors , dropout, x_mask=None, y_mask=None, sampling=True)
     else:
