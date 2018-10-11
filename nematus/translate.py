@@ -458,6 +458,8 @@ class Translator(object):
                     if '|' in w:
                         w=w.split('|')[0]
                     w=self._word_dict_trg[w] if w in self._word_dict_trg else 1
+                    if w >= self._options[0]['n_words']:
+                        w=1
                     y_sf.append(w)
 
             input_item = QueueItem(verbose=self._verbose,
