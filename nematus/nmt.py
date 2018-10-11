@@ -942,7 +942,7 @@ def build_model(tparams, options):
         second_ctx=ctx
         if options.get('two_encoders'):
             second_ctx=ctx_factors
-        logit, opt_ret, _, logit_factors, opt_ret_factors, _ = build_decoders_connection_feedback(tparams, options, y, y_factors , ctx, second_ctx init_state, init_state_factors , dropout, x_mask=x_mask, y_mask=y_mask, sampling=False)
+        logit, opt_ret, _, logit_factors, opt_ret_factors, _ = build_decoders_connection_feedback(tparams, options, y, y_factors , ctx, second_ctx, init_state, init_state_factors , dropout, x_mask=x_mask, y_mask=y_mask, sampling=False)
     elif options['multiple_decoders_connection_state']:
         # initial decoder state for the factors decoder, TODO: dropout?
         init_state_factors = get_layer_constr('ff')(tparams, ctx_mean, options, dropout,
